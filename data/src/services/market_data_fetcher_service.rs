@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Duration, Utc};
-use reqwest::StatusCode;
+use reqwest::{Error, StatusCode};
 use rust_decimal::Decimal;
 use serde_json::Value;
 use std::str::FromStr;
@@ -20,22 +20,21 @@ use crate::{
 use super::database_service::DatabaseService;
 
 const BINANCE_FUTURE_API_URL: &str = "https://fapi.binance.com/fapi/v1/";
-
 const CONTINUOUS_KLINES_API_PATH: &str = "continuousKlines";
 
 #[derive(Debug)]
 pub enum MarketDataFetcherError {
-    RequestError(reqwest::Error),
-    JsonError(reqwest::Error),
-    ApiError { status: StatusCode, body: String },
+    Request(Error),
+    Json(Error),
+    Api { status: StatusCode, body: String },
 }
 
 impl fmt::Display for MarketDataFetcherError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MarketDataFetcherError::RequestError(e) => write!(f, "Request failed: {}", e),
-            MarketDataFetcherError::JsonError(e) => write!(f, "Failed to parse JSON: {}", e),
-            MarketDataFetcherError::ApiError { status, body } => {
+            MarketDataFetcherError::Request(e) => write!(f, "Request failed: {}", e),
+            MarketDataFetcherError::Json(e) => write!(f, "Failed to parse JSON: {}", e),
+            MarketDataFetcherError::Api { status, body } => {
                 write!(f, "API error {}: {}", status, body)
             }
         }
@@ -44,9 +43,9 @@ impl fmt::Display for MarketDataFetcherError {
 
 impl std::error::Error for MarketDataFetcherError {}
 
-impl From<reqwest::Error> for MarketDataFetcherError {
-    fn from(err: reqwest::Error) -> Self {
-        MarketDataFetcherError::RequestError(err)
+impl From<Error> for MarketDataFetcherError {
+    fn from(err: Error) -> Self {
+        MarketDataFetcherError::Request(err)
     }
 }
 
@@ -55,7 +54,6 @@ pub struct MarketDataFetcher {
     pub symbol: String,
     pub contract: String,
     pub timeframe: TimeFrame,
-    timeframe_repository: Arc<TimeFrameRepository>,
     market_data_repository: Arc<MarketDataRepository>,
 }
 
@@ -79,10 +77,10 @@ impl MarketDataFetcher {
             symbol,
             contract,
             timeframe,
-            timeframe_repository: Arc::new(timeframe_repository),
             market_data_repository: Arc::new(market_data_repository),
         })
     }
+
     async fn fetch(
         &self,
         path: &str,
@@ -96,17 +94,17 @@ impl MarketDataFetcher {
             .query(&params)
             .send()
             .await
-            .map_err(MarketDataFetcherError::RequestError)?;
+            .map_err(MarketDataFetcherError::Request)?;
 
         println!("{:?}", response);
         match response.error_for_status() {
-            Ok(resp) => resp.json().await.map_err(MarketDataFetcherError::JsonError),
+            Ok(resp) => resp.json().await.map_err(MarketDataFetcherError::Json),
             Err(err) => {
                 let status = err.status().unwrap_or_default();
                 let body = err.to_string();
 
                 tracing::error!(%status, %body, "Binance API request failed");
-                Err(MarketDataFetcherError::ApiError { status, body })
+                Err(MarketDataFetcherError::Api { status, body })
             }
         }
     }

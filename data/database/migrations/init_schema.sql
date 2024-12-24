@@ -27,36 +27,39 @@ CREATE TABLE MarketData (
     trades BIGINT NOT NULL,
 
     -- Technical indicators
-    rsi_14 DECIMAL(10,4),
-    macd_line DECIMAL(10,4),
-    macd_signal DECIMAL(10,4),
-    macd_histogram DECIMAL(10,4),
+    rsi_14 DECIMAL(20,8),
+    macd_line DECIMAL(20,8),
+    macd_signal DECIMAL(20,8),
+    macd_histogram DECIMAL(20,8),
     bb_upper DECIMAL(24,8),
     bb_middle DECIMAL(24,8),
     bb_lower DECIMAL(24,8),
-    atr_14 DECIMAL(10,4),
+    atr_14 DECIMAL(20,8),
 
     -- Market microstructure
     bid_ask_spread DECIMAL(24,8),
-    depth_imbalance DECIMAL(10,4),
-    funding_rate DECIMAL(10,4),
+    depth_imbalance DECIMAL(20,8),
+    funding_rate DECIMAL(20,8),
     open_interest DECIMAL(24,8),
-    long_short_ratio DECIMAL(10,4),
+    long_short_ratio DECIMAL(20,8),
 
     -- Volatility metrics
-    volatility_1h DECIMAL(10,4),
-    volatility_24h DECIMAL(10,4),
+    volatility_1h DECIMAL(20,8),
+    volatility_24h DECIMAL(20,8),
 
     -- Price changes
-    price_change_1h DECIMAL(10,4),
-    price_change_24h DECIMAL(10,4),
+    price_change_1h DECIMAL(20,8),
+    price_change_24h DECIMAL(20,8),
 
     -- Trading volume changes
-    volume_change_1h DECIMAL(10,4),
-    volume_change_24h DECIMAL(10,4),
+    volume_change_1h DECIMAL(20,8),
+    volume_change_24h DECIMAL(20,8),
 
     -- Analyzed
     analyzed BOOLEAN DEFAULT FALSE,
+
+    -- Usable
+    usable_by_model BOOLEAN DEFAULT FALSE,
 
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 

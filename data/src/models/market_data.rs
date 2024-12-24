@@ -57,6 +57,9 @@ pub struct MarketData {
     // Analyzed
     pub analyzed: bool,
 
+    // Usable by model
+    pub usable_by_model: bool,
+
     pub created_at: DateTime<Utc>,
 }
 
@@ -107,7 +110,25 @@ impl MarketData {
             volume_change_1h: None,
             volume_change_24h: None,
             analyzed: false,
+            usable_by_model: false,
             created_at: Utc::now(),
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MarketDataIndicatorUpdate {
+    pub id: Uuid,
+    pub rsi_14: Option<Decimal>,
+    pub macd_line: Option<Decimal>,
+    pub macd_signal: Option<Decimal>,
+    pub macd_histogram: Option<Decimal>,
+    pub bb_upper: Option<Decimal>,
+    pub bb_middle: Option<Decimal>,
+    pub bb_lower: Option<Decimal>,
+    pub atr_14: Option<Decimal>,
+    pub depth_imbalance: Option<Decimal>,
+    pub volatility_24h: Option<Decimal>,
+    pub analyzed: bool,
+    pub usable_by_model: bool,
 }
