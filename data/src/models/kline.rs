@@ -2,8 +2,8 @@ use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use tokio_postgres::types::{FromSql, ToSql, Type, IsNull};
 use std::error::Error;
+use tokio_postgres::types::{FromSql, IsNull, ToSql, Type};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kline {
@@ -71,6 +71,12 @@ pub struct Kline {
     pub actual_profit_loss: Option<Decimal>,
     pub trade_executed: bool,
 
+    // Analyzed
+    pub analyzed: Option<bool>,
+
+    // Predicted
+    pub predicted: Option<bool>,
+
     pub created_at: DateTime<Utc>,
 }
 
@@ -79,6 +85,7 @@ pub struct KlineCreatePayload {
     pub symbol: String,
     pub contract_type: String,
     pub open_time: DateTime<Utc>,
+    pub close_time: DateTime<Utc>,
     pub open_price: Decimal,
     pub high_price: Decimal,
     pub low_price: Decimal,
@@ -105,12 +112,8 @@ pub enum PredictedPosition {
     Hold,
 }
 
-
 impl<'a> FromSql<'a> for PositionType {
-    fn from_sql(
-        _ty: &Type,
-        raw: &'a [u8],
-    ) -> Result<Self, Box<dyn Error + Sync + Send>> {
+    fn from_sql(_ty: &Type, raw: &'a [u8]) -> Result<Self, Box<dyn Error + Sync + Send>> {
         let s = String::from_utf8(raw.to_vec())?;
         match s.to_uppercase().as_str() {
             "LONG" => Ok(PositionType::Long),
@@ -152,10 +155,7 @@ impl ToSql for PositionType {
 }
 
 impl<'a> FromSql<'a> for PredictedPosition {
-    fn from_sql(
-        _ty: &Type,
-        raw: &'a [u8],
-    ) -> Result<Self, Box<dyn Error + Sync + Send>> {
+    fn from_sql(_ty: &Type, raw: &'a [u8]) -> Result<Self, Box<dyn Error + Sync + Send>> {
         let s = String::from_utf8(raw.to_vec())?;
         match s.to_uppercase().as_str() {
             "LONG" => Ok(PredictedPosition::Long),

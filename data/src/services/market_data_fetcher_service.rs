@@ -7,29 +7,21 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::str::FromStr;
 
-use crate::models::kline::KlineCreatePayload;
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum Position {
-    Long,
-    Short,
-    Neutral,
-}
 
 const BINANCE_FUTURE_API_URL: &str = "https://fapi.binance.com/fapi/v1/";
 
 const CONTINUOUS_KLINES_API_PATH: &str = "continuousKlines";
 
-pub struct KlineFetcher {
+pub struct MarketDataFetcher {
     pub client: Client,
     pub symbol: String,
     pub interval: String,
     pub contract: String,
 }
 
-impl KlineFetcher {
+impl MarketDataFetcher {
     pub fn new(symbol: String, interval: String, contract: String) -> Self {
-        KlineFetcher {
+        MarketDataFetcher {
             client: Client::new(),
             symbol,
             interval,
@@ -68,23 +60,25 @@ impl KlineFetcher {
         let taker_buy_volume = value[9].as_str().unwrap();
         let taker_buy_base_asser_volume = value[10].as_str().unwrap();
 
+
+        MarketData::new(timeframe_id, symbol, contract_type, open_time, close_time, open, high, low, close, volume, trades, vwap)
         // Parse decimal values
-        KlineCreatePayload {
-            symbol: self.symbol.clone(),
-            contract_type: self.contract.clone(),
-            open_time: DateTime::from_timestamp_millis(open_time).unwrap(),
-            close_time: DateTime::from_timestamp_millis(close_time).unwrap(),
-            open_price: Decimal::from_str(open_price).unwrap_or_default(),
-            high_price: Decimal::from_str(high_price).unwrap_or_default(),
-            low_price: Decimal::from_str(low_price).unwrap_or_default(),
-            close_price: Decimal::from_str(close_price).unwrap_or_default(),
-            volume: Decimal::from_str(volume).unwrap_or_default(),
-            base_asset_volume: Decimal::from_str(base_asset_volume).unwrap_or_default(),
-            number_of_trades: number_of_trade,
-            taker_buy_volume: Decimal::from_str(taker_buy_volume).unwrap_or_default(),
-            taker_buy_base_asset_volume: Decimal::from_str(taker_buy_base_asser_volume)
-                .unwrap_or_default(),
-        }
+        // KlineCreatePayload {
+        //     symbol: self.symbol.clone(),
+        //     contract_type: self.contract.clone(),
+        //     open_time: DateTime::from_timestamp_millis(open_time).unwrap(),
+        //     close_time: DateTime::from_timestamp_millis(close_time).unwrap(),
+        //     open_price: Decimal::from_str(open_price).unwrap_or_default(),
+        //     high_price: Decimal::from_str(high_price).unwrap_or_default(),
+        //     low_price: Decimal::from_str(low_price).unwrap_or_default(),
+        //     close_price: Decimal::from_str(close_price).unwrap_or_default(),
+        //     volume: Decimal::from_str(volume).unwrap_or_default(),
+        //     base_asset_volume: Decimal::from_str(base_asset_volume).unwrap_or_default(),
+        //     number_of_trades: number_of_trade,
+        //     taker_buy_volume: Decimal::from_str(taker_buy_volume).unwrap_or_default(),
+        //     taker_buy_base_asset_volume: Decimal::from_str(taker_buy_base_asser_volume)
+        //         .unwrap_or_default(),
+        // }
     }
 
     pub async fn fetchI(&self, limit: i8) -> Result<(), Box<dyn std::error::Error>> {
