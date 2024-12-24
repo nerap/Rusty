@@ -1,15 +1,9 @@
-use std::sync::Arc;
+use tokio_postgres::{Client, NoTls};
 
-use crate::repositories::kline_repostory::KlineRepository;
-use tokio_postgres::NoTls;
-use tokio::sync::Mutex;
-
-pub struct DatabaseService {
-    pub kline: KlineRepository,
-}
+pub struct DatabaseService {}
 
 impl DatabaseService {
-    pub async fn new() -> Result<Self, tokio_postgres::Error> {
+    pub async fn new() -> Result<Client, tokio_postgres::Error> {
         let (client, connection) = tokio_postgres::connect(
             "host=localhost dbname=rusty user=admin password=admin",
             NoTls,
@@ -22,8 +16,6 @@ impl DatabaseService {
             }
         });
 
-        Ok(Self {
-            kline: KlineRepository::new(Arc::new(Mutex::new(client))),
-        })
+        Ok(client)
     }
 }

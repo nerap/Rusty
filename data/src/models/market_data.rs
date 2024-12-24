@@ -19,12 +19,11 @@ pub struct MarketData {
     pub open_time: DateTime<Utc>,
     pub close_time: DateTime<Utc>,
     pub open: Decimal,
+    pub close: Decimal,
     pub high: Decimal,
     pub low: Decimal,
-    pub close: Decimal,
     pub volume: Decimal,
-    pub trades: i32,
-    pub vwap: Decimal,
+    pub trades: i64,
 
     // Technical indicators
     pub rsi_14: Option<Decimal>,
@@ -55,6 +54,9 @@ pub struct MarketData {
     pub volume_change_1h: Option<Decimal>,
     pub volume_change_24h: Option<Decimal>,
 
+    // Analyzed
+    pub analyzed: bool,
+
     pub created_at: DateTime<Utc>,
 }
 
@@ -66,12 +68,11 @@ impl MarketData {
         open_time: DateTime<Utc>,
         close_time: DateTime<Utc>,
         open: Decimal,
+        close: Decimal,
         high: Decimal,
         low: Decimal,
-        close: Decimal,
         volume: Decimal,
-        trades: i32,
-        vwap: Decimal,
+        trades: i64,
     ) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -86,7 +87,6 @@ impl MarketData {
             close,
             volume,
             trades,
-            vwap,
             rsi_14: None,
             macd_line: None,
             macd_signal: None,
@@ -106,6 +106,7 @@ impl MarketData {
             price_change_24h: None,
             volume_change_1h: None,
             volume_change_24h: None,
+            analyzed: false,
             created_at: Utc::now(),
         }
     }

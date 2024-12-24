@@ -20,12 +20,11 @@ CREATE TABLE MarketData (
     open_time TIMESTAMPTZ NOT NULL,
     close_time TIMESTAMPTZ NOT NULL,
     open DECIMAL(20,8) NOT NULL,
+    close DECIMAL(20,8) NOT NULL,
     high DECIMAL(20,8) NOT NULL,
     low DECIMAL(20,8) NOT NULL,
-    close DECIMAL(20,8) NOT NULL,
     volume DECIMAL(20,8) NOT NULL,
-    trades INTEGER NOT NULL,
-    vwap DECIMAL(20,8) NOT NULL,
+    trades BIGINT NOT NULL,
 
     -- Technical indicators
     rsi_14 DECIMAL(10,4),
@@ -55,6 +54,9 @@ CREATE TABLE MarketData (
     -- Trading volume changes
     volume_change_1h DECIMAL(10,4),
     volume_change_24h DECIMAL(10,4),
+
+    -- Analyzed
+    analyzed BOOLEAN DEFAULT FALSE,
 
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 
@@ -100,6 +102,7 @@ CREATE TABLE ModelPredictions (
 CREATE UNIQUE INDEX idx_market_data_unique ON MarketData (open_time, symbol, contract_type, timeframe_id);
 CREATE INDEX idx_market_data_symbol ON MarketData (open_time DESC, symbol, contract_type);
 CREATE INDEX idx_market_data_timeframe ON MarketData (open_time DESC, timeframe_id);
+CREATE INDEX idx_market_data_analyzed ON MarketData (analyzed, timeframe_id);
 CREATE INDEX idx_positions_symbol ON Positions (symbol, contract_type, status);
 CREATE INDEX idx_model_predictions_market ON ModelPredictions (market_data_id, prediction_time DESC);
 

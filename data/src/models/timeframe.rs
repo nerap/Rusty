@@ -5,7 +5,7 @@ use uuid::Uuid;
 use validator::Validate;
 
 #[derive(Debug, Serialize, Deserialize, Validate)]
-pub struct Timeframe {
+pub struct TimeFrame {
     pub id: Uuid,
 
     #[validate(length(min = 1, max = 10))]
@@ -17,7 +17,7 @@ pub struct Timeframe {
     pub created_at: DateTime<Utc>,
 }
 
-impl Timeframe {
+impl TimeFrame {
     pub fn new(
         name: String,
         interval_minutes: i32,
