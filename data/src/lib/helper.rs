@@ -1,4 +1,5 @@
-use rust_decimal::prelude::ToPrimitive;
+use chrono::Duration;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 
 use crate::models::market_data::MarketData;
 
@@ -59,11 +60,21 @@ impl Helper {
         let slow_period = 26;
         let signal_period = 9;
 
-        let fast_ema = Helper::exponential_ma(closes, fast_period);
-        let slow_ema = Helper::exponential_ma(closes, slow_period);
-        let macd_line = fast_ema - slow_ema;
+        // Calculate EMAs for entire series
+        let mut fast_emas = Vec::with_capacity(closes.len());
+        let mut slow_emas = Vec::with_capacity(closes.len());
+        let mut macd_lines = Vec::with_capacity(closes.len());
 
-        let signal = Helper::exponential_ma(&vec![macd_line], signal_period);
+        for i in 0..closes.len() {
+            let slice = &closes[0..=i];
+            fast_emas.push(Helper::exponential_ma(slice, fast_period));
+            slow_emas.push(Helper::exponential_ma(slice, slow_period));
+            macd_lines.push(fast_emas[i] - slow_emas[i]);
+        }
+
+        // Calculate signal line from MACD values
+        let signal = Helper::exponential_ma(&macd_lines, signal_period);
+        let macd_line = *macd_lines.last().unwrap();
         let histogram = macd_line - signal;
 
         (macd_line, signal, histogram)
@@ -101,10 +112,45 @@ impl Helper {
         Helper::exponential_ma(&tr, period)
     }
 
-    pub fn calculate_volatility(closes: &[f64], period: usize) -> f64 {
+    pub fn calculate_volatility(closes: &[f64], hours: i32) -> f64 {
         let returns: Vec<f64> = closes.windows(2).map(|w| (w[1] - w[0]) / w[0]).collect();
 
-        Helper::standard_deviation(&returns, period) * (252_f64).sqrt() // Annualized
+        let period = if returns.len() >= (hours * 60) as usize {
+            (hours * 60) as usize // Convert hours to minutes for candle count
+        } else {
+            returns.len()
+        };
+
+        Helper::standard_deviation(&returns, period) * (252_f64 * 24.0 / hours as f64).sqrt()
+        // Annualized based on hours
+    }
+
+    pub fn calculate_price_change(data: &[MarketData], hours: i64) -> Decimal {
+        if data.len() < 2 {
+            return Decimal::ZERO;
+        }
+
+        let target_time = data[0].open_time - Duration::hours(hours);
+        let old_price = match data.iter().find(|d| d.open_time <= target_time) {
+            Some(d) => d.close,
+            None => return Decimal::ZERO,
+        };
+
+        ((data[0].close - old_price) / old_price) * Decimal::ONE_HUNDRED
+    }
+
+    pub fn calculate_volume_change(data: &[MarketData], hours: i64) -> Decimal {
+        if data.len() < 2 {
+            return Decimal::ZERO;
+        }
+
+        let target_time = data[0].open_time - Duration::hours(hours);
+        let old_volume = match data.iter().find(|d| d.open_time <= target_time) {
+            Some(d) => d.volume,
+            None => return Decimal::ZERO,
+        };
+
+        ((data[0].volume - old_volume) / old_volume) * Decimal::ONE_HUNDRED
     }
 
     pub fn calculate_depth_imbalance(data: &[MarketData]) -> f64 {

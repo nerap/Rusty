@@ -1,0 +1,10 @@
+data:
+  lookback_days: 30  # Number of days to fetch historical data
+  pairs:
+    - symbol: "BTCUSDT"
+      contract_type: "PERPETUAL"
+      timeframes:
+        - interval: "15m"
+          weight: 0.4
+        # - interval: "1h"
+        #   weight: 0.6

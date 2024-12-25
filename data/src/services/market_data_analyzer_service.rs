@@ -67,7 +67,12 @@ impl MarketDataAnalyzer {
                             bb_lower: None,
                             atr_14: None,
                             depth_imbalance: None,
+                            volatility_1h: None,
                             volatility_24h: None,
+                            price_change_1h: None,
+                            price_change_24h: None,
+                            volume_change_1h: None,
+                            volume_change_24h: None,
                             analyzed: true,
                             usable_by_model: false,
                         })
@@ -85,7 +90,13 @@ impl MarketDataAnalyzer {
                 let (upper, middle, lower) = Helper::calculate_bollinger_bands(&closes, 20, 2.0);
                 let atr = Helper::calculate_atr(&historical_data, 14);
                 let depth_imbalance = Helper::calculate_depth_imbalance(&historical_data);
-                let volatility = Helper::calculate_volatility(&closes, 24);
+                let volatility_1h = Helper::calculate_volatility(&closes, 1);
+                let volatility_24h = Helper::calculate_volatility(&closes, 24);
+                let price_change_1h = Helper::calculate_price_change(&historical_data, 1);
+                let price_change_24h = Helper::calculate_price_change(&historical_data, 24);
+                let volume_change_1h = Helper::calculate_volume_change(&historical_data, 1);
+                let volume_change_24h = Helper::calculate_volume_change(&historical_data, 24);
+
 
                 self.market_data_repository
                     .update_indicators(MarketDataIndicatorUpdate {
@@ -101,7 +112,12 @@ impl MarketDataAnalyzer {
                         depth_imbalance: Some(
                             Decimal::from_f64(depth_imbalance).unwrap_or_default(),
                         ),
-                        volatility_24h: Some(Decimal::from_f64(volatility).unwrap_or_default()),
+                        volatility_1h: Some(Decimal::from_f64(volatility_1h).unwrap_or_default()),
+                        volatility_24h: Some(Decimal::from_f64(volatility_24h).unwrap_or_default()),
+                        price_change_1h: Some(price_change_1h),
+                        price_change_24h: Some(price_change_24h),
+                        volume_change_1h: Some(volume_change_1h),
+                        volume_change_24h: Some(volume_change_24h),
                         analyzed: true,
                         usable_by_model: true,
                     })

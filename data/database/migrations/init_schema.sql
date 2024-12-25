@@ -1,15 +1,17 @@
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+CREATE TYPE ContractType AS ENUM ('perpetual', 'current_quarter', 'next_quarter');
+
 CREATE TABLE Timeframes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(10) NOT NULL,
+    symbol VARCHAR(20) NOT NULL,
+    contract_type ContractType NOT NULL,
     interval_minutes INTEGER NOT NULL,
-    is_enabled BOOLEAN DEFAULT true,
     weight DECIMAL(4,3) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 
-    UNIQUE (interval_minutes, weight)
+    UNIQUE (symbol, contract_type, interval_minutes)
 );
 
 CREATE TABLE MarketData (
@@ -63,7 +65,7 @@ CREATE TABLE MarketData (
 
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 
-    UNIQUE (open_time, timeframe_id, symbol, contract_type)
+    UNIQUE (open_time, timeframe_id)
 );
 
 CREATE TABLE Positions (
@@ -108,8 +110,3 @@ CREATE INDEX idx_market_data_timeframe ON MarketData (open_time DESC, timeframe_
 CREATE INDEX idx_market_data_analyzed ON MarketData (analyzed, timeframe_id);
 CREATE INDEX idx_positions_symbol ON Positions (symbol, contract_type, status);
 CREATE INDEX idx_model_predictions_market ON ModelPredictions (market_data_id, prediction_time DESC);
-
--- Insert timeframe seeds
-INSERT INTO Timeframes (name, interval_minutes, weight) VALUES
-    ('15m', 15, 0.4),
-    ('1h', 60, 0.6);

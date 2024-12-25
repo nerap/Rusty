@@ -1,9 +1,12 @@
+use anyhow::Result;
 use rust_decimal::Decimal;
 use tokio_postgres::Client;
 use uuid::Uuid;
-use anyhow::Result;
 
-use crate::models::timeframe::TimeFrame;
+use crate::{
+    lib::helper::Helper,
+    models::timeframe::{ContractType, TimeFrame},
+};
 
 pub struct TimeFrameRepository {
     client: Client,
@@ -14,75 +17,87 @@ impl TimeFrameRepository {
         Self { client }
     }
 
-    pub async fn create(&self, time_frame: &TimeFrame) -> Result<Uuid> {
-        let row = self.client.query_one(
-            "INSERT INTO Timeframes (name, interval_minutes, is_enabled, weight)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id",
-            &[
-                &time_frame.name,
-                &time_frame.interval_minutes,
-                &time_frame.is_enabled,
-                &time_frame.weight,
-            ],
-        ).await?;
+    pub async fn create(&self, time_frame: &TimeFrame) -> Result<TimeFrame> {
+        let row = self
+            .client
+            .query_one(
+                "INSERT INTO Timeframes (symbol, contract_type, interval_minutes, weight)
+                    VALUES ($1, $2, $3,$4)
+                 RETURNING *",
+                &[
+                    &time_frame.symbol,
+                    &time_frame.contract_type,
+                    &time_frame.interval_minutes,
+                    &time_frame.weight,
+                ],
+            )
+            .await?;
 
-        Ok(row.get(0))
+        Ok(TimeFrame {
+            id: row.get(0),
+            symbol: row.get(1),
+            contract_type: row.get(2),
+            interval_minutes: row.get(3),
+            weight: row.get(4),
+            created_at: row.get(5),
+        })
     }
 
     pub async fn find_by_id(&self, id: Uuid) -> Result<Option<TimeFrame>> {
-        let row = self.client.query_opt(
-            "SELECT * FROM Timeframes WHERE id = $1",
-            &[&id]
-        ).await?;
+        let row = self
+            .client
+            .query_opt("SELECT * FROM Timeframes WHERE id = $1", &[&id])
+            .await?;
 
         Ok(row.map(|r| TimeFrame {
             id: r.get(0),
-            name: r.get(1),
-            interval_minutes: r.get(2),
-            is_enabled: r.get(3),
+            symbol: r.get(1),
+            contract_type: r.get(2),
+            interval_minutes: r.get(3),
             weight: r.get(4),
             created_at: r.get(5),
         }))
     }
 
-    pub async fn find_by_interval_and_weight(
+    pub async fn find_or_create(
         &self,
-        interval_minutes: i32,
-        weight: Decimal
-    ) -> Result<Option<TimeFrame>> {
-        let row = self.client.query_opt(
-            "SELECT * FROM Timeframes
-            WHERE interval_minutes = $1
-            AND weight = $2",
-            &[&interval_minutes, &weight]
-        ).await?;
+        symbol: String,
+        contract_type: ContractType,
+        interval: String,
+        weight: Decimal,
+    ) -> Result<TimeFrame> {
+        let interval_minutes = Helper::interval_to_minutes(&interval).unwrap();
 
-        Ok(row.map(|r| TimeFrame {
-            id: r.get(0),
-            name: r.get(1),
-            interval_minutes: r.get(2),
-            is_enabled: r.get(3),
-            weight: r.get(4),
-            created_at: r.get(5),
-        }))
-    }
+        if let Some(row) = self
+            .client
+            .query_opt(
+                "SELECT id,
+                        symbol,
+                        contract_type,
+                        interval_minutes,
+                        weight,
+                        created_at
+                 FROM Timeframes
+                 WHERE symbol = $1
+                   AND contract_type = $2
+                   AND interval_minutes = $3
+                   AND weight = $4",
+                &[&symbol, &contract_type, &interval_minutes, &weight],
+            )
+            .await?
+        {
+            return Ok(TimeFrame {
+                id: row.get(0),
+                symbol: row.get(1),
+                contract_type: row.get(2),
+                interval_minutes: row.get(3),
+                weight: row.get(4),
+                created_at: row.get(5),
+            });
+        }
 
-    pub async fn find_all_enabled(&self) -> Result<Vec<TimeFrame>> {
-        let rows = self.client.query(
-            "SELECT * FROM Timeframes
-            WHERE is_enabled = true
-            ORDER BY interval_minutes",
-            &[]
-        ).await?;
+        let timeframe = TimeFrame::new(symbol, contract_type, interval_minutes, weight);
 
-        Ok(rows.iter().map(|r| TimeFrame {
-            id: r.get(0),
-            name: r.get(1),
-            interval_minutes: r.get(2),
-            is_enabled: r.get(3),
-            weight: r.get(4),
-            created_at: r.get(5),
-        }).collect())
+        self.create(&timeframe).await
     }
 }

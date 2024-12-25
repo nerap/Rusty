@@ -354,11 +354,24 @@ impl MarketDataRepository {
         let rows = client
             .execute(
                 "UPDATE MarketData SET
-                   rsi_14 = $2, macd_line = $3, macd_signal = $4, macd_histogram = $5,
-                   bb_upper = $6, bb_middle = $7, bb_lower = $8, atr_14 = $9,
-                   depth_imbalance = $10, volatility_24h = $11,
-                   analyzed = $12, usable_by_model = $13
-                  WHERE id = $1",
+                   rsi_14 = $2,
+                   macd_line = $3,
+                   macd_signal = $4,
+                   macd_histogram = $5,
+                   bb_upper = $6,
+                   bb_middle = $7,
+                   bb_lower = $8,
+                   atr_14 = $9,
+                   depth_imbalance = $10,
+                   volatility_1h = $11,
+                   volatility_24h = $12,
+                   price_change_1h = $13,
+                   price_change_24h = $14,
+                   volume_change_1h = $15,
+                   volume_change_24h = $16,
+                   analyzed = $17,
+                   usable_by_model = $18
+                WHERE id = $1",
                 &[
                     &update.id,
                     &update.rsi_14,
@@ -370,7 +383,12 @@ impl MarketDataRepository {
                     &update.bb_lower,
                     &update.atr_14,
                     &update.depth_imbalance,
+                    &update.volatility_1h,
                     &update.volatility_24h,
+                    &update.price_change_1h,
+                    &update.price_change_24h,
+                    &update.volume_change_1h,
+                    &update.volume_change_24h,
                     &update.analyzed,
                     &update.usable_by_model,
                 ],
@@ -383,5 +401,80 @@ impl MarketDataRepository {
                 Err(MarketDataRepositoryError::Database(error))
             }
         }
+    }
+
+    pub async fn find_most_recent_open_time(
+        &self,
+        timeframe_id: &Uuid,
+    ) -> Result<Option<DateTime<Utc>>> {
+        let row = self
+            .client
+            .lock()
+            .await
+            .query_opt(
+                "SELECT open_time FROM MarketData
+            WHERE timeframe_id = $1
+            ORDER BY open_time DESC
+            LIMIT 1",
+                &[timeframe_id],
+            )
+            .await?;
+
+        Ok(row.map(|r| r.get(0)))
+    }
+
+    pub async fn find_latest_by_timeframe(
+        &self,
+        timeframe_id: &Uuid,
+    ) -> Result<Option<MarketData>> {
+        let row = self
+            .client
+            .lock()
+            .await
+            .query_opt(
+                "SELECT * FROM MarketData
+            WHERE timeframe_id = $1
+            ORDER BY open_time DESC
+            LIMIT 1",
+                &[timeframe_id],
+            )
+            .await?;
+
+        Ok(row.map(|r| MarketData {
+            id: r.get(0),
+            timeframe_id: r.get(1),
+            symbol: r.get(2),
+            contract_type: r.get(3),
+            open_time: r.get(4),
+            close_time: r.get(5),
+            open: r.get(6),
+            high: r.get(7),
+            low: r.get(8),
+            close: r.get(9),
+            volume: r.get(10),
+            trades: r.get(11),
+            rsi_14: r.get(12),
+            macd_line: r.get(13),
+            macd_signal: r.get(14),
+            macd_histogram: r.get(15),
+            bb_upper: r.get(16),
+            bb_middle: r.get(17),
+            bb_lower: r.get(18),
+            atr_14: r.get(19),
+            bid_ask_spread: r.get(20),
+            depth_imbalance: r.get(21),
+            funding_rate: r.get(22),
+            open_interest: r.get(23),
+            long_short_ratio: r.get(24),
+            volatility_1h: r.get(25),
+            volatility_24h: r.get(26),
+            price_change_1h: r.get(27),
+            price_change_24h: r.get(28),
+            volume_change_1h: r.get(29),
+            volume_change_24h: r.get(30),
+            analyzed: r.get(31),
+            usable_by_model: r.get(32),
+            created_at: r.get(33),
+        }))
     }
 }

@@ -128,7 +128,12 @@ pub struct MarketDataIndicatorUpdate {
     pub bb_lower: Option<Decimal>,
     pub atr_14: Option<Decimal>,
     pub depth_imbalance: Option<Decimal>,
+    pub volatility_1h: Option<Decimal>,
     pub volatility_24h: Option<Decimal>,
+    pub price_change_1h: Option<Decimal>,
+    pub price_change_24h: Option<Decimal>,
+    pub volume_change_1h: Option<Decimal>,
+    pub volume_change_24h: Option<Decimal>,
     pub analyzed: bool,
     pub usable_by_model: bool,
 }
