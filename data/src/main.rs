@@ -37,13 +37,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 config.lookback_days,
             )
             .await?;
-            let result = market_data_fetcher.initialize_market_data(500).await;
+            let result = market_data_fetcher.initialize_market_data(1500).await;
             println!("{:?}", result);
         }
     }
-    // let analyzer = MarketDataAnalyzer::new().await?;
+    let analyzer = MarketDataAnalyzer::new().await?;
     //
-    // analyzer.analyze_market_data().await;
+    analyzer.analyze_market_data().await;
 
     Ok(())
 }
