@@ -21,7 +21,7 @@ use super::database_service::DatabaseService;
 
 const BINANCE_FUTURE_API_URL: &str = "https://fapi.binance.com/fapi/v1/";
 const CONTINUOUS_KLINES_API_PATH: &str = "continuousKlines";
-const FETCH_LIMIT: i32 = 2;
+const FETCH_LIMIT: i32 = 1000;
 const MAX_RETRIES: i32 = 5;
 const RECENT_DATA_MAX_RETRIES: i32 = 3;
 const RATE_LIMIT_TIMEOUT: i64 = 100;

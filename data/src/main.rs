@@ -1,12 +1,14 @@
 use anyhow::Result;
 use dotenvy::dotenv;
-use models::timeframe::ContractType;
+use models::timeframe::{ContractType, Interval};
 use services::{
-    configuration_service::ConfigService, market_data_analyzer_service::MarketDataAnalyzer,
+    configuration_service::ConfigService,
+    market_data_analyzer_service::MarketDataAnalyzer,
     market_data_fetcher_service::MarketDataFetcher,
 };
-use std::{env, sync::Arc, time::Duration};
-use tokio::{sync::Semaphore, time::sleep};
+use std::{env, str::FromStr, sync::Arc};
+use tokio::sync::Semaphore;
+use tokio_cron_scheduler::{Job, JobScheduler};
 use utils::helper::WorkerError;
 
 mod models;
@@ -14,8 +16,26 @@ mod repositories;
 mod services;
 mod utils;
 
-const DEFAULT_SLEEP: u64 = 10;
 const MAX_CONCURRENT_TASKS: usize = 5;
+
+fn get_cron_expression(interval: &str) -> String {
+    match Interval::from_str(interval).unwrap() {
+        Interval::Minute1 => "0 * * * * *",         // Every minute
+        Interval::Minute3 => "0 */3 * * * *",       // Every 3 minutes
+        Interval::Minute5 => "0 */5 * * * *",       // Every 5 minutes
+        Interval::Minute15 => "0 */15 * * * *",     // Every 15 minutes
+        Interval::Minute30 => "0 */30 * * * *",     // Every 30 minutes
+        Interval::Hour1 => "0 0 * * * *",          // Every hour
+        Interval::Hour2 => "0 0 */2 * * *",        // Every 2 hours
+        Interval::Hour4 => "0 0 */4 * * *",        // Every 4 hours
+        Interval::Hour6 => "0 0 */6 * * *",        // Every 6 hours
+        Interval::Hour8 => "0 0 */8 * * *",        // Every 8 hours
+        Interval::Hour12 => "0 0 */12 * * *",      // Every 12 hours
+        Interval::Day1 => "0 0 0 * * *",           // Every day at midnight
+        Interval::Day3 => "0 0 0 */3 * *",         // Every 3 days
+        Interval::Week1 => "0 0 0 * * 0",          // Every Sunday at midnight
+    }.to_string()
+}
 
 async fn run_timeframe_worker(
     symbol: String,
@@ -24,44 +44,69 @@ async fn run_timeframe_worker(
     lookback_days: u32,
     semaphore: Arc<Semaphore>,
 ) -> Result<(), WorkerError> {
-    let _permit = semaphore
-        .acquire()
-        .await
+    let scheduler = JobScheduler::new().await
         .map_err(|e| WorkerError::Config(e.to_string()))?;
 
-    let market_data_fetcher =
-        MarketDataFetcher::new(symbol, contract_type, interval, lookback_days)
+    let market_data_fetcher = Arc::new(
+        MarketDataFetcher::new(symbol, contract_type, interval.clone(), lookback_days)
             .await
-            .map_err(|e| WorkerError::MarketData(e.to_string()))?;
+            .map_err(|e| WorkerError::MarketData(e.to_string()))?
+    );
 
+    // Initial data fetch
     market_data_fetcher
         .initialize_market_data()
         .await
         .map_err(|e| WorkerError::MarketData(e.to_string()))?;
-    let analyzer = MarketDataAnalyzer::new()
-        .await
-        .map_err(|e| WorkerError::Database(e.to_string()))?;
-    analyzer
-        .analyze_market_data()
-        .await
-        .map_err(|e| WorkerError::Database(e.to_string()))?;
 
-    loop {
-        if let Err(e) = market_data_fetcher.fetch_recent_market_data().await {
-            eprintln!("Error fetching market data: {}", e);
-            continue;
-        }
+    let cron_expression = get_cron_expression(&interval);
+    let sem = Arc::clone(&semaphore);
+    let fetcher = Arc::clone(&market_data_fetcher);
 
-        match MarketDataAnalyzer::new().await {
-            Ok(analyzer) => {
-                if let Err(e) = analyzer.analyze_market_data().await {
-                    eprintln!("Error analyzing market data: {}", e);
+    let job = Job::new_async(cron_expression.as_str(), move |_uuid, _lock| {
+        let sem = Arc::clone(&sem);
+        let fetcher = Arc::clone(&fetcher);
+
+        Box::pin(async move {
+            let _permit = match sem.acquire().await {
+                Ok(permit) => permit,
+                Err(e) => {
+                    eprintln!("Error acquiring semaphore: {}", e);
+                    return;
                 }
-            }
-            Err(e) => eprintln!("Error creating analyzer: {}", e),
-        }
+            };
 
-        sleep(Duration::from_secs(DEFAULT_SLEEP)).await;
+            if let Err(e) = fetcher.fetch_recent_market_data().await {
+                eprintln!("Error fetching market data: {}", e);
+                return;
+            }
+            println!("success fetch");
+
+            match MarketDataAnalyzer::new().await {
+                Ok(analyzer) => {
+                    if let Err(e) = analyzer.analyze_market_data().await {
+                        eprintln!("Error analyzing market data: {}", e);
+                    }
+                }
+                Err(e) => eprintln!("Error creating analyzer: {}", e),
+            }
+        })
+    })
+    .map_err(|e| WorkerError::Config(e.to_string()))?;
+
+    scheduler
+        .add(job)
+        .await
+        .map_err(|e| WorkerError::Config(e.to_string()))?;
+
+    scheduler
+        .start()
+        .await
+        .map_err(|e| WorkerError::Config(e.to_string()))?;
+
+    // Keep the task running
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
     }
 }
 
