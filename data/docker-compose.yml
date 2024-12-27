@@ -9,6 +9,8 @@ services:
       - POSTGRES_PASSWORD=admin
     volumes:
       - rusty:/var/lib/postgresql/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U admin -d rusty"]
       interval: 10s

@@ -1,4 +1,3 @@
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -36,7 +35,6 @@ pub struct PairConfig {
 pub struct TimeframeConfig {
    #[serde(with = "interval_string")]
    pub interval: Interval,
-   pub weight: Decimal,
 }
 
 mod interval_string {

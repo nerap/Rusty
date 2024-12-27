@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use std::sync::Arc;
 
 use rust_decimal::{
@@ -7,7 +7,7 @@ use rust_decimal::{
 };
 
 use crate::{
-    lib::helper::Helper, models::market_data::MarketDataIndicatorUpdate,
+    utils::helper::Helper, models::market_data::MarketDataIndicatorUpdate,
     repositories::market_data_repository::MarketDataRepository,
 };
 

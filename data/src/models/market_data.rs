@@ -1,4 +1,3 @@
-// models/market_data.rs
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -36,11 +35,7 @@ pub struct MarketData {
     pub atr_14: Option<Decimal>,
 
     // Market microstructure
-    pub bid_ask_spread: Option<Decimal>,
     pub depth_imbalance: Option<Decimal>,
-    pub funding_rate: Option<Decimal>,
-    pub open_interest: Option<Decimal>,
-    pub long_short_ratio: Option<Decimal>,
 
     // Volatility metrics
     pub volatility_1h: Option<Decimal>,
@@ -98,11 +93,7 @@ impl MarketData {
             bb_middle: None,
             bb_lower: None,
             atr_14: None,
-            bid_ask_spread: None,
             depth_imbalance: None,
-            funding_rate: None,
-            open_interest: None,
-            long_short_ratio: None,
             volatility_1h: None,
             volatility_24h: None,
             price_change_1h: None,

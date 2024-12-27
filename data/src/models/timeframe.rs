@@ -2,7 +2,6 @@ use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use postgres_types::{FromSql, ToSql};
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
@@ -105,7 +104,6 @@ pub struct TimeFrame {
     pub symbol: String,
     pub contract_type: ContractType,
     pub interval_minutes: i32,
-    pub weight: Decimal,
     pub created_at: DateTime<Utc>,
 }
 
@@ -114,14 +112,12 @@ impl TimeFrame {
         symbol: String,
         contract_type: ContractType,
         interval_minutes: i32,
-        weight: Decimal,
     ) -> Self {
         Self {
             id: Uuid::new_v4(),
             symbol,
             contract_type,
             interval_minutes,
-            weight,
             created_at: Utc::now(),
         }
     }

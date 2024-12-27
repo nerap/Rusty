@@ -37,19 +37,19 @@ impl MarketDataRepository {
             .await
             .query_one(
                 "INSERT INTO MarketData (
-                timeframe_id, symbol, contract_type, open_time, close_time,
-                open, high, low, close, volume, trades,
-                rsi_14, macd_line, macd_signal, macd_histogram,
-                bb_upper, bb_middle, bb_lower, atr_14,
-                bid_ask_spread, depth_imbalance, funding_rate, open_interest,
-                long_short_ratio, volatility_1h, volatility_24h,
-                price_change_1h, price_change_24h,
-                volume_change_1h, volume_change_24h
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                    $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
-                    $25, $26, $27, $28, $29, $30)
-            RETURNING id",
+                    timeframe_id, symbol, contract_type, open_time, close_time,
+                    open, high, low, close, volume, trades,
+                    rsi_14, macd_line, macd_signal, macd_histogram,
+                    bb_upper, bb_middle, bb_lower, atr_14, depth_imbalance,
+                    volatility_1h, volatility_24h,
+                    price_change_1h, price_change_24h,
+                    volume_change_1h, volume_change_24h
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                        $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
+                        $25, $26)
+                ON CONFLICT (open_time, timeframe_id) DO NOTHING
+                RETURNING id",
                 &[
                     &data.timeframe_id,
                     &data.symbol,
@@ -70,11 +70,7 @@ impl MarketDataRepository {
                     &data.bb_middle,
                     &data.bb_lower,
                     &data.atr_14,
-                    &data.bid_ask_spread,
                     &data.depth_imbalance,
-                    &data.funding_rate,
-                    &data.open_interest,
-                    &data.long_short_ratio,
                     &data.volatility_1h,
                     &data.volatility_24h,
                     &data.price_change_1h,
@@ -94,30 +90,26 @@ impl MarketDataRepository {
         let transaction = client.transaction().await?;
 
         for record in data {
+            println!("{:?}", record.open_time);
+            if record.close_time > Utc::now() {
+                continue;
+            }
             let row = transaction
                 .query_one(
                     "INSERT INTO MarketData (
-                    timeframe_id, symbol, contract_type, open_time, close_time,
-                    open, high, low, close, volume, trades,
-                    rsi_14, macd_line, macd_signal, macd_histogram,
-                    bb_upper, bb_middle, bb_lower, atr_14,
-                    bid_ask_spread, depth_imbalance, funding_rate, open_interest,
-                    long_short_ratio, volatility_1h, volatility_24h,
-                    price_change_1h, price_change_24h,
-                    volume_change_1h, volume_change_24h
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                        $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
-                        $25, $26, $27, $28, $29, $30)
-                ON CONFLICT (open_time, timeframe_id, symbol, contract_type)
-                DO UPDATE SET
-                    open = EXCLUDED.open,
-                    high = EXCLUDED.high,
-                    low = EXCLUDED.low,
-                    close = EXCLUDED.close,
-                    volume = EXCLUDED.volume,
-                    trades = EXCLUDED.trades
-                RETURNING id",
+                        timeframe_id, symbol, contract_type, open_time, close_time,
+                        open, high, low, close, volume, trades,
+                        rsi_14, macd_line, macd_signal, macd_histogram,
+                        bb_upper, bb_middle, bb_lower, atr_14, depth_imbalance,
+                        volatility_1h, volatility_24h,
+                        price_change_1h, price_change_24h,
+                        volume_change_1h, volume_change_24h
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                            $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
+                            $25, $26)
+                    ON CONFLICT (open_time, timeframe_id) DO NOTHING
+                    RETURNING id",
                     &[
                         &record.timeframe_id,
                         &record.symbol,
@@ -138,11 +130,7 @@ impl MarketDataRepository {
                         &record.bb_middle,
                         &record.bb_lower,
                         &record.atr_14,
-                        &record.bid_ask_spread,
                         &record.depth_imbalance,
-                        &record.funding_rate,
-                        &record.open_interest,
-                        &record.long_short_ratio,
                         &record.volatility_1h,
                         &record.volatility_24h,
                         &record.price_change_1h,
@@ -160,6 +148,7 @@ impl MarketDataRepository {
                 }
                 Err(error) => {
                     println!("Error: {:?}", error);
+                    continue;
                 }
             }
         }
@@ -197,20 +186,16 @@ impl MarketDataRepository {
             bb_middle: r.get(17),
             bb_lower: r.get(18),
             atr_14: r.get(19),
-            bid_ask_spread: r.get(20),
-            depth_imbalance: r.get(21),
-            funding_rate: r.get(22),
-            open_interest: r.get(23),
-            long_short_ratio: r.get(24),
-            volatility_1h: r.get(25),
-            volatility_24h: r.get(26),
-            price_change_1h: r.get(27),
-            price_change_24h: r.get(28),
-            volume_change_1h: r.get(29),
-            volume_change_24h: r.get(30),
-            analyzed: r.get(31),
-            usable_by_model: r.get(32),
-            created_at: r.get(33),
+            depth_imbalance: r.get(20),
+            volatility_1h: r.get(21),
+            volatility_24h: r.get(22),
+            price_change_1h: r.get(23),
+            price_change_24h: r.get(24),
+            volume_change_1h: r.get(25),
+            volume_change_24h: r.get(26),
+            analyzed: r.get(27),
+            usable_by_model: r.get(28),
+            created_at: r.get(29),
         }))
     }
 
@@ -249,20 +234,16 @@ impl MarketDataRepository {
                     bb_middle: r.get(17),
                     bb_lower: r.get(18),
                     atr_14: r.get(19),
-                    bid_ask_spread: r.get(20),
-                    depth_imbalance: r.get(21),
-                    funding_rate: r.get(22),
-                    open_interest: r.get(23),
-                    long_short_ratio: r.get(24),
-                    volatility_1h: r.get(25),
-                    volatility_24h: r.get(26),
-                    price_change_1h: r.get(27),
-                    price_change_24h: r.get(28),
-                    volume_change_1h: r.get(29),
-                    volume_change_24h: r.get(30),
-                    analyzed: r.get(31),
-                    usable_by_model: r.get(32),
-                    created_at: r.get(33),
+                    depth_imbalance: r.get(20),
+                    volatility_1h: r.get(21),
+                    volatility_24h: r.get(22),
+                    price_change_1h: r.get(23),
+                    price_change_24h: r.get(24),
+                    volume_change_1h: r.get(25),
+                    volume_change_24h: r.get(26),
+                    analyzed: r.get(27),
+                    usable_by_model: r.get(28),
+                    created_at: r.get(29),
                 })
                 .collect()),
             Err(error) => {
@@ -326,20 +307,16 @@ impl MarketDataRepository {
                     bb_middle: r.get(17),
                     bb_lower: r.get(18),
                     atr_14: r.get(19),
-                    bid_ask_spread: r.get(20),
-                    depth_imbalance: r.get(21),
-                    funding_rate: r.get(22),
-                    open_interest: r.get(23),
-                    long_short_ratio: r.get(24),
-                    volatility_1h: r.get(25),
-                    volatility_24h: r.get(26),
-                    price_change_1h: r.get(27),
-                    price_change_24h: r.get(28),
-                    volume_change_1h: r.get(29),
-                    volume_change_24h: r.get(30),
-                    analyzed: r.get(31),
-                    usable_by_model: r.get(32),
-                    created_at: r.get(33),
+                    depth_imbalance: r.get(20),
+                    volatility_1h: r.get(21),
+                    volatility_24h: r.get(22),
+                    price_change_1h: r.get(23),
+                    price_change_24h: r.get(24),
+                    volume_change_1h: r.get(25),
+                    volume_change_24h: r.get(26),
+                    analyzed: r.get(27),
+                    usable_by_model: r.get(28),
+                    created_at: r.get(29),
                 })
                 .collect()),
             Err(error) => {
@@ -413,9 +390,9 @@ impl MarketDataRepository {
             .await
             .query_opt(
                 "SELECT open_time FROM MarketData
-            WHERE timeframe_id = $1
-            ORDER BY open_time DESC
-            LIMIT 1",
+                WHERE timeframe_id = $1
+                ORDER BY open_time DESC
+                LIMIT 1",
                 &[timeframe_id],
             )
             .await?;
@@ -433,9 +410,9 @@ impl MarketDataRepository {
             .await
             .query_opt(
                 "SELECT * FROM MarketData
-            WHERE timeframe_id = $1
-            ORDER BY open_time DESC
-            LIMIT 1",
+                WHERE timeframe_id = $1
+                ORDER BY open_time DESC
+                LIMIT 1",
                 &[timeframe_id],
             )
             .await?;
@@ -461,20 +438,16 @@ impl MarketDataRepository {
             bb_middle: r.get(17),
             bb_lower: r.get(18),
             atr_14: r.get(19),
-            bid_ask_spread: r.get(20),
-            depth_imbalance: r.get(21),
-            funding_rate: r.get(22),
-            open_interest: r.get(23),
-            long_short_ratio: r.get(24),
-            volatility_1h: r.get(25),
-            volatility_24h: r.get(26),
-            price_change_1h: r.get(27),
-            price_change_24h: r.get(28),
-            volume_change_1h: r.get(29),
-            volume_change_24h: r.get(30),
-            analyzed: r.get(31),
-            usable_by_model: r.get(32),
-            created_at: r.get(33),
+            depth_imbalance: r.get(20),
+            volatility_1h: r.get(21),
+            volatility_24h: r.get(22),
+            price_change_1h: r.get(23),
+            price_change_24h: r.get(24),
+            volume_change_1h: r.get(25),
+            volume_change_24h: r.get(26),
+            analyzed: r.get(27),
+            usable_by_model: r.get(28),
+            created_at: r.get(29),
         }))
     }
 }

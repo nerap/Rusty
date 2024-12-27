@@ -1,5 +1,5 @@
-CREATE EXTENSION IF NOT EXISTS timescaledb;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+SET TIME ZONE 'UTC';
 
 CREATE TYPE ContractType AS ENUM ('perpetual', 'current_quarter', 'next_quarter');
 
@@ -8,7 +8,6 @@ CREATE TABLE Timeframes (
     symbol VARCHAR(20) NOT NULL,
     contract_type ContractType NOT NULL,
     interval_minutes INTEGER NOT NULL,
-    weight DECIMAL(4,3) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 
     UNIQUE (symbol, contract_type, interval_minutes)
@@ -39,11 +38,7 @@ CREATE TABLE MarketData (
     atr_14 DECIMAL(20,8),
 
     -- Market microstructure
-    bid_ask_spread DECIMAL(24,8),
     depth_imbalance DECIMAL(20,8),
-    funding_rate DECIMAL(20,8),
-    open_interest DECIMAL(24,8),
-    long_short_ratio DECIMAL(20,8),
 
     -- Volatility metrics
     volatility_1h DECIMAL(20,8),
