@@ -1,12 +1,12 @@
 use anyhow::Result;
 use chrono::{DateTime, Duration as DurationChrono, Utc};
-use postgres_types::ToSql;
 use reqwest::{Error, StatusCode};
 use rust_decimal::Decimal;
 use serde_json::Value;
-use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::{fmt, usize};
+use tokio::time::sleep;
 
 use crate::models::timeframe::{ContractType, TimeFrame};
 use crate::utils::helper::Helper;
@@ -22,9 +22,10 @@ use super::database_service::DatabaseService;
 const BINANCE_FUTURE_API_URL: &str = "https://fapi.binance.com/fapi/v1/";
 const CONTINUOUS_KLINES_API_PATH: &str = "continuousKlines";
 const FETCH_LIMIT: i32 = 2;
-
 const MAX_RETRIES: i32 = 5;
+const RECENT_DATA_MAX_RETRIES: i32 = 3;
 const RATE_LIMIT_TIMEOUT: i64 = 100;
+const RECENT_DATA_RETRY_DELAY: u64 = 2000; // 2 seconds in milliseconds
 const RATE_LIMIT_MAX_WEIGHT: i32 = 4000;
 
 #[derive(Debug)]
@@ -32,6 +33,7 @@ pub enum MarketDataFetcherError {
     Request(Error),
     Json(Error),
     Api { status: StatusCode, body: String },
+    NoDataFound,
 }
 
 impl fmt::Display for MarketDataFetcherError {
@@ -42,6 +44,7 @@ impl fmt::Display for MarketDataFetcherError {
             MarketDataFetcherError::Api { status, body } => {
                 write!(f, "API error {}: {}", status, body)
             }
+            MarketDataFetcherError::NoDataFound => write!(f, "No market data found"),
         }
     }
 }
@@ -110,8 +113,7 @@ impl MarketDataFetcher {
         {
             if weight >= RATE_LIMIT_MAX_WEIGHT {
                 tracing::warn!("Rate limit weight threshold reached: {}", weight);
-                tokio::time::sleep(std::time::Duration::from_millis(RATE_LIMIT_TIMEOUT as u64))
-                    .await;
+                sleep(std::time::Duration::from_millis(RATE_LIMIT_TIMEOUT as u64)).await;
                 return Box::pin(self.fetch_with_retry(path, params, retry_count)).await;
             }
         }
@@ -119,8 +121,7 @@ impl MarketDataFetcher {
         match response.status() {
             StatusCode::TOO_MANY_REQUESTS if retry_count < MAX_RETRIES => {
                 tracing::warn!("Rate limited, retry {} of {}", retry_count + 1, MAX_RETRIES);
-                tokio::time::sleep(std::time::Duration::from_millis(RATE_LIMIT_TIMEOUT as u64))
-                    .await;
+                sleep(std::time::Duration::from_millis(RATE_LIMIT_TIMEOUT as u64)).await;
                 Box::pin(self.fetch_with_retry(path, params, retry_count + 1)).await
             }
             _ => match response.error_for_status() {
@@ -135,37 +136,73 @@ impl MarketDataFetcher {
         }
     }
 
-    pub fn format_values_to_kline_create_payload(&self, value: Value) -> MarketData {
-        let open_time = value[0].as_i64().unwrap();
-        let open = value[1].as_str().unwrap();
-        let high = value[2].as_str().unwrap();
-        let low = value[3].as_str().unwrap();
-        let close = value[4].as_str().unwrap();
-        let volume = value[5].as_str().unwrap();
-        let close_time = value[6].as_i64().unwrap();
-        let trades = value[8].as_i64().unwrap();
+    fn format_values_to_kline_create_payload(
+        &self,
+        value: Value,
+    ) -> Result<MarketData, MarketDataFetcherError> {
+        let open_time = value[0]
+            .as_i64()
+            .ok_or_else(|| MarketDataFetcherError::Api {
+                status: StatusCode::BAD_REQUEST,
+                body: "Invalid open_time format".to_string(),
+            })?;
 
-        MarketData::new(
+        let parse_decimal =
+            |value: &Value, field: &str| -> Result<Decimal, MarketDataFetcherError> {
+                value
+                    .as_str()
+                    .ok_or_else(|| MarketDataFetcherError::Api {
+                        status: StatusCode::BAD_REQUEST,
+                        body: format!("Invalid {} format", field),
+                    })
+                    .and_then(|s| {
+                        Decimal::from_str(s).map_err(|_| MarketDataFetcherError::Api {
+                            status: StatusCode::BAD_REQUEST,
+                            body: format!("Invalid {} decimal", field),
+                        })
+                    })
+            };
+
+        Ok(MarketData::new(
             self.timeframe.id,
             self.symbol.clone(),
             self.contract_type.to_string(),
-            DateTime::<Utc>::from_timestamp_millis(open_time).unwrap(),
-            DateTime::<Utc>::from_timestamp_millis(close_time).unwrap(),
-            Decimal::from_str(open).unwrap_or_default(),
-            Decimal::from_str(close).unwrap_or_default(),
-            Decimal::from_str(high).unwrap_or_default(),
-            Decimal::from_str(low).unwrap_or_default(),
-            Decimal::from_str(volume).unwrap_or_default(),
-            trades,
-        )
+            DateTime::<Utc>::from_timestamp_millis(open_time).ok_or_else(|| {
+                MarketDataFetcherError::Api {
+                    status: StatusCode::BAD_REQUEST,
+                    body: "Invalid timestamp".to_string(),
+                }
+            })?,
+            DateTime::<Utc>::from_timestamp_millis(value[6].as_i64().ok_or_else(|| {
+                MarketDataFetcherError::Api {
+                    status: StatusCode::BAD_REQUEST,
+                    body: "Invalid close_time format".to_string(),
+                }
+            })?)
+            .ok_or_else(|| MarketDataFetcherError::Api {
+                status: StatusCode::BAD_REQUEST,
+                body: "Invalid timestamp".to_string(),
+            })?,
+            parse_decimal(&value[1], "open")?,
+            parse_decimal(&value[4], "close")?,
+            parse_decimal(&value[2], "high")?,
+            parse_decimal(&value[3], "low")?,
+            parse_decimal(&value[5], "volume")?,
+            value[8]
+                .as_i64()
+                .ok_or_else(|| MarketDataFetcherError::Api {
+                    status: StatusCode::BAD_REQUEST,
+                    body: "Invalid trades format".to_string(),
+                })?,
+        ))
     }
 
     async fn fetch_market_data(
         &self,
         start_time: DateTime<Utc>,
-        end_time: DateTime<Utc>
-    ) -> Result<usize, Box<dyn std::error::Error>> {
-        let mut inserted_market_data_count: usize = 0;
+        end_time: DateTime<Utc>,
+    ) -> Result<usize, MarketDataFetcherError> {
+        let mut inserted_count = 0;
         let mut current_time = start_time.timestamp_millis();
 
         while current_time < end_time.timestamp_millis() {
@@ -182,51 +219,60 @@ impl MarketDataFetcher {
             ];
 
             let data = self
-                .fetch_with_retry(CONTINUOUS_KLINES_API_PATH, &params, MAX_RETRIES)
+                .fetch_with_retry(CONTINUOUS_KLINES_API_PATH, &params, 0)
                 .await?;
-
-            let market_data_array = data.as_array().ok_or("Invalid response format")?;
+            let market_data_array = data.as_array().ok_or(MarketDataFetcherError::Api {
+                status: StatusCode::BAD_REQUEST,
+                body: "Invalid response format".to_string(),
+            })?;
 
             if market_data_array.is_empty() {
                 break;
             }
 
-            let market_data_batch: Vec<MarketData> = market_data_array
+            let market_data_batch: Result<Vec<MarketData>, _> = market_data_array
                 .iter()
                 .map(|raw_data| self.format_values_to_kline_create_payload(raw_data.clone()))
                 .collect();
 
+            let market_data_batch = market_data_batch?;
             self.market_data_repository
                 .create_batch(&market_data_batch)
-                .await?;
+                .await
+                .map_err(|e| MarketDataFetcherError::Api {
+                    status: StatusCode::INTERNAL_SERVER_ERROR,
+                    body: e.to_string(),
+                })?;
 
             if let Some(last_record) = market_data_batch.last() {
                 current_time = last_record.open_time.timestamp_millis() + 1;
+                inserted_count += market_data_batch.len();
             }
-            inserted_market_data_count += market_data_batch.len()
         }
 
-        Ok(inserted_market_data_count)
+        if inserted_count == 0 {
+            return Err(MarketDataFetcherError::NoDataFound);
+        }
+
+        Ok(inserted_count)
     }
 
-    pub async fn initialize_market_data(
-        &self,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn initialize_market_data(&self) -> Result<usize, MarketDataFetcherError> {
         let end_time = Utc::now();
         let start_time = end_time - DurationChrono::days(self.lookback_days.into());
 
-        let inserted_market_data_count = self.fetch_market_data(start_time, end_time).await
-        println!("Initiliaze MarketData for {:?}", inserted_market_data_count)
-        Ok(())
+        self.fetch_market_data(start_time, end_time).await
     }
 
-    pub async fn fetch_recent_market_data(
-        &self,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn fetch_recent_market_data(&self) -> Result<usize, MarketDataFetcherError> {
         let latest_record = self
             .market_data_repository
             .find_latest_by_timeframe(&self.timeframe.id)
-            .await?;
+            .await
+            .map_err(|e| MarketDataFetcherError::Api {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                body: e.to_string(),
+            })?;
 
         let start_time = match latest_record {
             Some(record) => record.open_time + DurationChrono::milliseconds(1),
@@ -234,7 +280,22 @@ impl MarketDataFetcher {
         };
 
         let end_time = Utc::now();
+        let mut retries = 0;
 
-        self.fetch_market_data(start_time, end_time).await
+        loop {
+            match self.fetch_market_data(start_time, end_time).await {
+                Ok(count) => return Ok(count),
+                Err(MarketDataFetcherError::NoDataFound) if retries < RECENT_DATA_MAX_RETRIES => {
+                    retries += 1;
+                    tracing::warn!(
+                        "No recent data found, retry {} of {}",
+                        retries,
+                        RECENT_DATA_MAX_RETRIES
+                    );
+                    sleep(std::time::Duration::from_millis(RECENT_DATA_RETRY_DELAY)).await;
+                }
+                Err(e) => return Err(e),
+            }
+        }
     }
 }

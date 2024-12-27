@@ -1,5 +1,6 @@
 use chrono::Duration;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
+use thiserror::Error;
 
 use crate::models::market_data::MarketData;
 
@@ -188,5 +189,21 @@ impl Helper {
             .sum::<f64>()
             / period as f64;
         variance.sqrt()
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum WorkerError {
+    #[error("Market data error: {0}")]
+    MarketData(String),
+    #[error("Database error: {0}")]
+    Database(String),
+    #[error("Configuration error: {0}")]
+    Config(String),
+}
+
+impl std::convert::From<Box<dyn std::error::Error>> for WorkerError {
+    fn from(error: Box<dyn std::error::Error>) -> Self {
+        WorkerError::MarketData(error.to_string())
     }
 }
