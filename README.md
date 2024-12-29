@@ -30,7 +30,7 @@ The system is split into two main services:
 
 ## Technical Stack
 
-- **Backend:** Rust
+- **Backend:** Rust, Python, torch
 - **Database:** TimescaleDB (PostgreSQL)
 - **Machine Learning:** TensorFlow/PyTorch
 - **Infrastructure:** Docker, Docker Compose
@@ -39,6 +39,7 @@ The system is split into two main services:
 ## Prerequisites
 
 - Rust (latest stable version)
+- Python
 - Docker and Docker Compose
 - TimescaleDB
 - PostgreSQL client
