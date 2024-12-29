@@ -6,7 +6,7 @@ use services::{
     configuration_service::ConfigService, market_data_analyzer_service::MarketDataAnalyzer,
     market_data_fetcher_service::MarketDataFetcher,
 };
-use std::{ path::Path, str::FromStr, sync::Arc};
+use std::{path::Path, str::FromStr, sync::Arc};
 use tokio::sync::broadcast;
 use tokio::sync::Semaphore;
 use tokio_cron_scheduler::{Job, JobScheduler};
@@ -88,16 +88,20 @@ async fn run_timeframe_worker(
             .initialize_market_data()
             .await
             .map_err(|e| WorkerError::MarketData(e.to_string()))?;
-
-        // Analyze MarketData
-        match MarketDataAnalyzer::new().await {
-            Ok(analyzer) => {
-                if let Err(e) = analyzer.analyze_market_data().await {
-                    eprintln!("Error analyzing market data: {}", e);
-                }
-            }
-            Err(e) => eprintln!("Error creating analyzer: {}", e),
+    } else {
+        // Fetch recent market data
+        if let Err(e) = market_data_fetcher.fetch_recent_market_data().await {
+            eprintln!("Error fetching market data: {}", e);
         }
+    }
+
+    match MarketDataAnalyzer::new().await {
+        Ok(analyzer) => {
+            if let Err(e) = analyzer.analyze_market_data().await {
+                eprintln!("Error analyzing market data: {}", e);
+            }
+        }
+        Err(e) => eprintln!("Error creating analyzer: {}", e),
     }
 
     let cron_expression = get_cron_expression(&interval);
@@ -154,12 +158,10 @@ async fn run_timeframe_worker(
         .map_err(|e| WorkerError::Config(e.to_string()))?;
 
     match shutdown.recv().await {
-        Ok(_) | Err(_) => {
-            scheduler
-                .shutdown()
-                .await
-                .map_err(|e| WorkerError::Config(e.to_string()))?
-        }
+        Ok(_) | Err(_) => scheduler
+            .shutdown()
+            .await
+            .map_err(|e| WorkerError::Config(e.to_string()))?,
     }
     Ok(())
 }
