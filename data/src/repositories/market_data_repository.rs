@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use log::error;
 use tokio::sync::Mutex;
-use tokio_postgres::{Client, Error as PgError};
+use tokio_postgres::error::Error as PgError;
+use tokio_postgres::Client;
 use uuid::Uuid;
 
 use crate::models::market_data::{MarketData, MarketDataIndicatorUpdate};
@@ -11,10 +13,6 @@ use crate::models::market_data::{MarketData, MarketDataIndicatorUpdate};
 pub enum MarketDataRepositoryError {
     #[error("Database error: {0}")]
     Database(#[from] PgError),
-    #[error("Not found")]
-    NotFound,
-    #[error("Invalid data: {0}")]
-    InvalidData(String),
 }
 
 type Result<T> = std::result::Result<T, MarketDataRepositoryError>;
@@ -30,67 +28,12 @@ impl MarketDataRepository {
         }
     }
 
-    pub async fn create(&self, data: &MarketData) -> Result<Uuid> {
-        let row = self
-            .client
-            .lock()
-            .await
-            .query_one(
-                "INSERT INTO MarketData (
-                    timeframe_id, symbol, contract_type, open_time, close_time,
-                    open, high, low, close, volume, trades,
-                    rsi_14, macd_line, macd_signal, macd_histogram,
-                    bb_upper, bb_middle, bb_lower, atr_14, depth_imbalance,
-                    volatility_1h, volatility_24h,
-                    price_change_1h, price_change_24h,
-                    volume_change_1h, volume_change_24h
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                        $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
-                        $25, $26)
-                ON CONFLICT (open_time, timeframe_id) DO NOTHING
-                RETURNING id",
-                &[
-                    &data.timeframe_id,
-                    &data.symbol,
-                    &data.contract_type,
-                    &data.open_time,
-                    &data.close_time,
-                    &data.open,
-                    &data.high,
-                    &data.low,
-                    &data.close,
-                    &data.volume,
-                    &data.trades,
-                    &data.rsi_14,
-                    &data.macd_line,
-                    &data.macd_signal,
-                    &data.macd_histogram,
-                    &data.bb_upper,
-                    &data.bb_middle,
-                    &data.bb_lower,
-                    &data.atr_14,
-                    &data.depth_imbalance,
-                    &data.volatility_1h,
-                    &data.volatility_24h,
-                    &data.price_change_1h,
-                    &data.price_change_24h,
-                    &data.volume_change_1h,
-                    &data.volume_change_24h,
-                ],
-            )
-            .await?;
-
-        Ok(row.get(0))
-    }
-
     pub async fn create_batch(&self, data: &[MarketData]) -> Result<Vec<Uuid>> {
         let mut ids = Vec::with_capacity(data.len());
         let mut client = self.client.lock().await;
         let transaction = client.transaction().await?;
 
         for record in data {
-            println!("{:?}", record.open_time);
             if record.close_time > Utc::now() {
                 continue;
             }
@@ -140,14 +83,14 @@ impl MarketDataRepository {
                     ],
                 )
                 .await;
-
             match row {
                 Ok(row) => {
                     ids.push(row.get(0));
                     continue;
                 }
-                Err(error) => {
-                    println!("Error: {:?}", error);
+                Err(e) if e.as_db_error().is_none() => continue,
+                Err(e) => {
+                    error!("{:?}", e);
                     continue;
                 }
             }
@@ -155,48 +98,6 @@ impl MarketDataRepository {
 
         transaction.commit().await?;
         Ok(ids)
-    }
-
-    pub async fn find_by_id(&self, id: Uuid) -> Result<Option<MarketData>> {
-        let row = self
-            .client
-            .lock()
-            .await
-            .query_opt("SELECT * FROM MarketData WHERE id = $1", &[&id])
-            .await?;
-
-        Ok(row.map(|r| MarketData {
-            id: r.get(0),
-            timeframe_id: r.get(1),
-            symbol: r.get(2),
-            contract_type: r.get(3),
-            open_time: r.get(4),
-            close_time: r.get(5),
-            open: r.get(6),
-            high: r.get(7),
-            low: r.get(8),
-            close: r.get(9),
-            volume: r.get(10),
-            trades: r.get(11),
-            rsi_14: r.get(12),
-            macd_line: r.get(13),
-            macd_signal: r.get(14),
-            macd_histogram: r.get(15),
-            bb_upper: r.get(16),
-            bb_middle: r.get(17),
-            bb_lower: r.get(18),
-            atr_14: r.get(19),
-            depth_imbalance: r.get(20),
-            volatility_1h: r.get(21),
-            volatility_24h: r.get(22),
-            price_change_1h: r.get(23),
-            price_change_24h: r.get(24),
-            volume_change_1h: r.get(25),
-            volume_change_24h: r.get(26),
-            analyzed: r.get(27),
-            usable_by_model: r.get(28),
-            created_at: r.get(29),
-        }))
     }
 
     pub async fn find_unanalyzed_market_data(&self, limit: i8) -> Result<Vec<MarketData>> {
@@ -247,7 +148,7 @@ impl MarketDataRepository {
                 })
                 .collect()),
             Err(error) => {
-                println!("Error: {:?}", error);
+                error!("Error: {:?}", error);
                 Err(MarketDataRepositoryError::Database(error))
             }
         }
@@ -320,7 +221,7 @@ impl MarketDataRepository {
                 })
                 .collect()),
             Err(error) => {
-                println!("Error: {:?}", error);
+                error!("Error: {:?}", error);
                 Err(MarketDataRepositoryError::Database(error))
             }
         }
@@ -378,26 +279,6 @@ impl MarketDataRepository {
                 Err(MarketDataRepositoryError::Database(error))
             }
         }
-    }
-
-    pub async fn find_most_recent_open_time(
-        &self,
-        timeframe_id: &Uuid,
-    ) -> Result<Option<DateTime<Utc>>> {
-        let row = self
-            .client
-            .lock()
-            .await
-            .query_opt(
-                "SELECT open_time FROM MarketData
-                WHERE timeframe_id = $1
-                ORDER BY open_time DESC
-                LIMIT 1",
-                &[timeframe_id],
-            )
-            .await?;
-
-        Ok(row.map(|r| r.get(0)))
     }
 
     pub async fn find_latest_by_timeframe(

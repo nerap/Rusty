@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{fmt, str::FromStr};
 
 use chrono::{DateTime, Utc};
 use postgres_types::{FromSql, ToSql};
@@ -24,17 +24,17 @@ pub enum ContractType {
     NextQuarter,
 }
 
-impl ToString for ContractType {
-    fn to_string(&self) -> String {
+impl fmt::Display for ContractType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Perpetual => "PERPETUAL".to_string(),
-            Self::CurrentQuarter => "CURRENT_QUARTER".to_string(),
-            Self::NextQuarter => "NEXT_QUARTER".to_string(),
+            Self::Perpetual => write!(f, "PERPETUAL"),
+            Self::CurrentQuarter => write!(f, "CURRENT_QUARTER"),
+            Self::NextQuarter => write!(f, "NEXT_QUARTER"),
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub enum Interval {
     Minute1,
     Minute3,
@@ -54,31 +54,30 @@ pub enum Interval {
 
 impl FromStr for Interval {
     type Err = ConfigError;
-
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_uppercase().as_str() {
-            "1M" => Ok(Self::Minute1),
-            "3M" => Ok(Self::Minute3),
-            "5M" => Ok(Self::Minute5),
-            "15M" => Ok(Self::Minute15),
-            "30M" => Ok(Self::Minute30),
-            "1H" => Ok(Self::Hour1),
-            "2H" => Ok(Self::Hour2),
-            "4H" => Ok(Self::Hour4),
-            "6H" => Ok(Self::Hour6),
-            "8H" => Ok(Self::Hour8),
-            "12H" => Ok(Self::Hour12),
-            "1D" => Ok(Self::Day1),
-            "3D" => Ok(Self::Day3),
-            "1W" => Ok(Self::Week1),
+        match s.to_lowercase().as_str() {
+            "1m" => Ok(Self::Minute1),
+            "3m" => Ok(Self::Minute3),
+            "5m" => Ok(Self::Minute5),
+            "15m" => Ok(Self::Minute15),
+            "30m" => Ok(Self::Minute30),
+            "1h" => Ok(Self::Hour1),
+            "2h" => Ok(Self::Hour2),
+            "4h" => Ok(Self::Hour4),
+            "6h" => Ok(Self::Hour6),
+            "8h" => Ok(Self::Hour8),
+            "12h" => Ok(Self::Hour12),
+            "1d" => Ok(Self::Day1),
+            "3d" => Ok(Self::Day3),
+            "1w" => Ok(Self::Week1),
             _ => Err(ConfigError::InvalidInterval(s.to_string())),
         }
     }
 }
 
-impl ToString for Interval {
-    fn to_string(&self) -> String {
-        match self {
+impl fmt::Display for Interval {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
             Self::Minute1 => "1m",
             Self::Minute3 => "3m",
             Self::Minute5 => "5m",
@@ -93,8 +92,8 @@ impl ToString for Interval {
             Self::Day1 => "1d",
             Self::Day3 => "3d",
             Self::Week1 => "1w",
-        }
-        .to_string()
+        };
+        write!(f, "{}", s)
     }
 }
 
@@ -108,11 +107,7 @@ pub struct TimeFrame {
 }
 
 impl TimeFrame {
-    pub fn new(
-        symbol: String,
-        contract_type: ContractType,
-        interval_minutes: i32,
-    ) -> Self {
+    pub fn new(symbol: String, contract_type: ContractType, interval_minutes: i32) -> Self {
         Self {
             id: Uuid::new_v4(),
             symbol,

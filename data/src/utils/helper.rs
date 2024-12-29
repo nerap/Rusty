@@ -40,6 +40,10 @@ impl Helper {
         let mut gains = vec![0.0];
         let mut losses = vec![0.0];
 
+        if closes.len() < 2 || period == 0 {
+            return 50.0; // Default neutral value
+        }
+
         for i in 1..closes.len() {
             let diff = closes[i] - closes[i - 1];
             gains.push(diff.max(0.0));
@@ -50,9 +54,11 @@ impl Helper {
         let avg_loss = losses.iter().take(period).sum::<f64>() / period as f64;
 
         if avg_loss == 0.0 {
+            if avg_gain == 0.0 {
+                return 50.0;
+            }
             return 100.0;
         }
-
         100.0 - (100.0 / (1.0 + avg_gain / avg_loss))
     }
 
@@ -127,10 +133,9 @@ impl Helper {
     }
 
     pub fn calculate_price_change(data: &[MarketData], hours: i64) -> Decimal {
-        if data.len() < 2 {
+        if data.len() < 2 || hours <= 0 {
             return Decimal::ZERO;
         }
-
         let target_time = data[0].open_time - Duration::hours(hours);
         let old_price = match data.iter().find(|d| d.open_time <= target_time) {
             Some(d) => d.close,
@@ -141,7 +146,7 @@ impl Helper {
     }
 
     pub fn calculate_volume_change(data: &[MarketData], hours: i64) -> Decimal {
-        if data.len() < 2 {
+        if data.len() < 2 || hours <= 0 {
             return Decimal::ZERO;
         }
 
@@ -151,6 +156,9 @@ impl Helper {
             None => return Decimal::ZERO,
         };
 
+        if old_volume == Decimal::ZERO {
+            return Decimal::ZERO;
+        }
         ((data[0].volume - old_volume) / old_volume) * Decimal::ONE_HUNDRED
     }
 
@@ -177,6 +185,10 @@ impl Helper {
     }
 
     pub fn simple_ma(values: &[f64], period: usize) -> f64 {
+        if values.is_empty() || period == 0 {
+            return 0.0;
+        }
+        let period = period.min(values.len());
         values.iter().take(period).sum::<f64>() / period as f64
     }
 
@@ -196,8 +208,6 @@ impl Helper {
 pub enum WorkerError {
     #[error("Market data error: {0}")]
     MarketData(String),
-    #[error("Database error: {0}")]
-    Database(String),
     #[error("Configuration error: {0}")]
     Config(String),
 }

@@ -22,7 +22,8 @@ pub struct MarketDataAnalyzer {
 
 impl MarketDataAnalyzer {
     pub async fn new() -> Result<Self> {
-        let market_data_repository = MarketDataRepository::new(DatabaseService::new().await?);
+        let database = DatabaseService::new().await?;
+        let market_data_repository = MarketDataRepository::new(database.client);
 
         Ok(MarketDataAnalyzer {
             market_data_repository: Arc::new(market_data_repository),

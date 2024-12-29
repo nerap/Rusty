@@ -73,8 +73,11 @@ impl MarketDataFetcher {
         interval: String,
         lookback_days: u32,
     ) -> Result<Self> {
-        let timeframe_repository = TimeFrameRepository::new(DatabaseService::new().await?);
-        let market_data_repository = MarketDataRepository::new(DatabaseService::new().await?);
+        let database = DatabaseService::new().await?;
+        let timeframe_repository = TimeFrameRepository::new(database.client);
+
+        let database = DatabaseService::new().await?;
+        let market_data_repository = MarketDataRepository::new(database.client);
 
         let timeframe = timeframe_repository
             .find_or_create(symbol.clone(), contract_type.clone(), interval)
@@ -236,14 +239,21 @@ impl MarketDataFetcher {
                 .collect();
 
             let market_data_batch = market_data_batch?;
-            self.market_data_repository
+            let market_data_inserted = self
+                .market_data_repository
                 .create_batch(&market_data_batch)
                 .await
                 .map_err(|e| MarketDataFetcherError::Api {
                     status: StatusCode::INTERNAL_SERVER_ERROR,
                     body: e.to_string(),
                 })?;
-
+            tracing::info!(
+                "Inserted {} elements for {} {} {}",
+                market_data_inserted.len(),
+                self.symbol,
+                Helper::minutes_to_interval(self.timeframe.interval_minutes),
+                self.timeframe.contract_type
+            );
             if let Some(last_record) = market_data_batch.last() {
                 current_time = last_record.open_time.timestamp_millis() + 1;
                 inserted_count += market_data_batch.len();
@@ -253,6 +263,13 @@ impl MarketDataFetcher {
         if inserted_count == 0 {
             return Err(MarketDataFetcherError::NoDataFound);
         }
+        tracing::info!(
+            "MarketData initalization done {} elements inserted for {} {} {}",
+            inserted_count,
+            self.symbol,
+            Helper::minutes_to_interval(self.timeframe.interval_minutes),
+            self.timeframe.contract_type
+        );
 
         Ok(inserted_count)
     }
@@ -284,7 +301,16 @@ impl MarketDataFetcher {
 
         loop {
             match self.fetch_market_data(start_time, end_time).await {
-                Ok(count) => return Ok(count),
+                Ok(count) => {
+                    tracing::info!(
+                        "Inserted {} elements for {} {} {}",
+                        count,
+                        self.symbol,
+                        Helper::minutes_to_interval(self.timeframe.interval_minutes),
+                        self.timeframe.contract_type
+                    );
+                    return Ok(count);
+                }
                 Err(MarketDataFetcherError::NoDataFound) if retries < RECENT_DATA_MAX_RETRIES => {
                     retries += 1;
                     tracing::warn!(

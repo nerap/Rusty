@@ -9,14 +9,38 @@ services:
       - POSTGRES_PASSWORD=admin
     volumes:
       - rusty:/var/lib/postgresql/data
-      - /etc/timezone:/etc/timezone:ro
-      - /etc/localtime:/etc/localtime:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U admin -d rusty"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - data_network
+
+  analyzer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+        - DB_HOST=timescaledb
+        - DB_USER=admin
+        - DB_PASSWORD=admin
+        - DB_NAME=rusty
+        - DB_PORT=5432
+        - INIT=${INIT:-true}
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    command: ["./data", "--config", "./configuration.yaml", "--init", "${INIT:-true}"]
+    networks:
+      - data_network
 
 volumes:
   rusty:
     driver: local
+
+networks:
+  data_network:
+    driver: bridge

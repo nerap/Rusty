@@ -1,7 +1,5 @@
 use anyhow::Result;
-use rust_decimal::Decimal;
 use tokio_postgres::Client;
-use uuid::Uuid;
 
 use crate::{
     utils::helper::Helper,
@@ -39,21 +37,6 @@ impl TimeFrameRepository {
             interval_minutes: row.get(3),
             created_at: row.get(4),
         })
-    }
-
-    pub async fn find_by_id(&self, id: Uuid) -> Result<Option<TimeFrame>> {
-        let row = self
-            .client
-            .query_opt("SELECT * FROM Timeframes WHERE id = $1", &[&id])
-            .await?;
-
-        Ok(row.map(|r| TimeFrame {
-            id: r.get(0),
-            symbol: r.get(1),
-            contract_type: r.get(2),
-            interval_minutes: r.get(3),
-            created_at: r.get(4),
-        }))
     }
 
     pub async fn find_or_create(
