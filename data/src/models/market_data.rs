@@ -4,6 +4,28 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub enum MarketRegime {
+    TrendingUp,
+    TrendingDown,
+    Ranging,
+    HighVolatility,
+    LowVolatility,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub enum PricePattern {
+    DoubleTop,
+    DoubleBottom,
+    HeadAndShoulders,
+    InverseHeadAndShoulders,
+    BullishEngulfing,
+    BearishEngulfing,
+    Doji,
+    MorningStar,
+    EveningStar,
+}
+
 #[derive(Debug, Serialize, Deserialize, Validate)]
 pub struct MarketData {
     pub id: Uuid,
@@ -33,6 +55,26 @@ pub struct MarketData {
     pub bb_middle: Option<Decimal>,
     pub bb_lower: Option<Decimal>,
     pub atr_14: Option<Decimal>,
+
+    // Market Regime
+    pub market_regime: Option<MarketRegime>,
+
+    // Trend Indicators
+    pub adx: Option<Decimal>,
+    pub dmi_plus: Option<Decimal>,
+    pub dmi_minus: Option<Decimal>,
+    pub trend_strength: Option<Decimal>,
+    pub trend_direction: Option<i32>, // 1 for up, -1 for down, 0 for neutral
+
+    // Support/Resistance
+    pub support_levels: Option<Vec<Decimal>>,
+    pub resistance_levels: Option<Vec<Decimal>>,
+    pub nearest_support: Option<Decimal>,
+    pub nearest_resistance: Option<Decimal>,
+
+    // Price Patterns
+    pub detected_patterns: Option<Vec<PricePattern>>,
+    pub pattern_strength: Option<Decimal>,
 
     // Market microstructure
     pub depth_imbalance: Option<Decimal>,
@@ -86,6 +128,18 @@ impl MarketData {
             volume,
             trades,
             rsi_14: None,
+            market_regime: None,
+            adx: None,
+            dmi_plus: None,
+            dmi_minus: None,
+            trend_strength: None,
+            trend_direction: None, // 1 for up, -1 for down, 0 for neutral
+            support_levels: None,
+            resistance_levels: None,
+            nearest_support: None,
+            nearest_resistance: None,
+            detected_patterns: None,
+            pattern_strength: None,
             macd_line: None,
             macd_signal: None,
             macd_histogram: None,
@@ -118,6 +172,18 @@ pub struct MarketDataIndicatorUpdate {
     pub bb_middle: Option<Decimal>,
     pub bb_lower: Option<Decimal>,
     pub atr_14: Option<Decimal>,
+    pub market_regime: Option<MarketRegime>,
+    pub adx: Option<Decimal>,
+    pub dmi_plus: Option<Decimal>,
+    pub dmi_minus: Option<Decimal>,
+    pub trend_strength: Option<Decimal>,
+    pub trend_direction: Option<i32>, // 1 for up, -1 for down, 0 for neutral
+    pub support_levels: Option<Vec<Decimal>>,
+    pub resistance_levels: Option<Vec<Decimal>>,
+    pub nearest_support: Option<Decimal>,
+    pub nearest_resistance: Option<Decimal>,
+    pub detected_patterns: Option<Vec<PricePattern>>,
+    pub pattern_strength: Option<Decimal>,
     pub depth_imbalance: Option<Decimal>,
     pub volatility_1h: Option<Decimal>,
     pub volatility_24h: Option<Decimal>,

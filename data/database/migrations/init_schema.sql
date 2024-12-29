@@ -2,6 +2,19 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 SET TIME ZONE 'UTC';
 
 CREATE TYPE ContractType AS ENUM ('perpetual', 'current_quarter', 'next_quarter');
+CREATE TYPE MarketRegime AS ENUM ('trending_up', 'trending_down', 'ranging', 'high_volatility', 'low_volatility');
+CREATE TYPE ChartPattern AS ENUM (
+    'double_top',
+    'double_bottom',
+    'head_and_shoulders',
+    'inverse_head_and_shoulders',
+    'bullish_engulfing',
+    'bearish_engulfing',
+    'doji',
+    'morning_star',
+    'evening_star'
+);
+
 
 CREATE TABLE Timeframes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -36,6 +49,24 @@ CREATE TABLE MarketData (
     bb_middle DECIMAL(24,8),
     bb_lower DECIMAL(24,8),
     atr_14 DECIMAL(20,8),
+
+    -- Trend indicators
+    adx DECIMAL(20,8),
+    dmi_plus DECIMAL(20,8),
+    dmi_minus DECIMAL(20,8),
+    trend_strength DECIMAL(20,8),
+    trend_direction INTEGER, -- 1 for up, -1 for down, 0 for neutral
+
+    -- Market regime and patterns
+    market_regime MarketRegime,
+    detected_patterns ChartPattern[],
+    pattern_strength DECIMAL(5,4),
+
+    -- Support and Resistance
+    support_levels DECIMAL(20,8)[],
+    resistance_levels DECIMAL(20,8)[],
+    nearest_support DECIMAL(20,8),
+    nearest_resistance DECIMAL(20,8),
 
     -- Market microstructure
     depth_imbalance DECIMAL(20,8),
@@ -94,9 +125,6 @@ CREATE TABLE ModelPredictions (
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
--- -- Create hypertables
--- SELECT create_hypertable('MarketData', 'open_time');
--- SELECT create_hypertable('ModelPredictions', 'prediction_time');
 
 -- Create indexes with open_time as first column for hypertable compatibility
 CREATE UNIQUE INDEX idx_market_data_unique ON MarketData (open_time, symbol, contract_type, timeframe_id);
