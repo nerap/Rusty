@@ -1,4 +1,4 @@
-# Rusy
+# Rusty
 
 A cryptocurrency futures trading system, featuring dual timeframe analysis, ensemble machine learning models, and HFT-optimized data storage.
 
