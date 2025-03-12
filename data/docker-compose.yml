@@ -17,25 +17,25 @@ services:
     networks:
       - data_network
 
-  analyzer:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    environment:
-        - DB_HOST=timescaledb
-        - DB_USER=admin
-        - DB_PASSWORD=admin
-        - DB_NAME=rusty
-        - DB_PORT=5432
-        - INIT=${INIT:-true}
-    volumes:
-      - ./logs:/app/logs
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-    command: ["./data", "--config", "./configuration.yaml", "--init", "${INIT:-true}"]
-    networks:
-      - data_network
+  # analyzer:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   environment:
+  #       - DB_HOST=timescaledb
+  #       - DB_USER=admin
+  #       - DB_PASSWORD=admin
+  #       - DB_NAME=rusty
+  #       - DB_PORT=5432
+  #       - INIT=${INIT:-true}
+  #   volumes:
+  #     - ./logs:/app/logs
+  #   depends_on:
+  #     timescaledb:
+  #       condition: service_healthy
+  #   command: ["./data", "--config", "./configuration.yaml", "--init", "${INIT:-true}"]
+  #   networks:
+  #     - data_network
 
 volumes:
   rusty:

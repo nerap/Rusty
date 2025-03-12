@@ -40,17 +40,19 @@ impl MarketDataRepository {
             let row = transaction
                 .query_one(
                     "INSERT INTO MarketData (
-                        timeframe_id, symbol, contract_type, open_time, close_time,
-                        open, high, low, close, volume, trades,
-                        rsi_14, macd_line, macd_signal, macd_histogram,
-                        bb_upper, bb_middle, bb_lower, atr_14, depth_imbalance,
-                        volatility_1h, volatility_24h,
-                        price_change_1h, price_change_24h,
-                        volume_change_1h, volume_change_24h
+                        timeframe_id,
+                        symbol,
+                        contract_type,
+                        open_time,
+                        close_time,
+                        open,
+                        high,
+                        low,
+                        close,
+                        volume,
+                        trades
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                            $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
-                            $25, $26)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                     ON CONFLICT (open_time, timeframe_id) DO NOTHING
                     RETURNING id",
                     &[
@@ -65,30 +67,19 @@ impl MarketDataRepository {
                         &record.close,
                         &record.volume,
                         &record.trades,
-                        &record.rsi_14,
-                        &record.macd_line,
-                        &record.macd_signal,
-                        &record.macd_histogram,
-                        &record.bb_upper,
-                        &record.bb_middle,
-                        &record.bb_lower,
-                        &record.atr_14,
-                        &record.depth_imbalance,
-                        &record.volatility_1h,
-                        &record.volatility_24h,
-                        &record.price_change_1h,
-                        &record.price_change_24h,
-                        &record.volume_change_1h,
-                        &record.volume_change_24h,
                     ],
                 )
                 .await;
+
             match row {
                 Ok(row) => {
                     ids.push(row.get(0));
                     continue;
                 }
-                Err(e) if e.as_db_error().is_none() => continue,
+                Err(e) if e.as_db_error().is_none() => {
+                    error!("{:?}", e);
+                    continue;
+                }
                 Err(e) => {
                     error!("{:?}", e);
                     continue;
@@ -100,14 +91,31 @@ impl MarketDataRepository {
         Ok(ids)
     }
 
-    pub async fn find_unanalyzed_market_data(&self, limit: i8) -> Result<Vec<MarketData>> {
-        let rows= self
+    pub async fn find_market_data_for_analysis(
+        &self,
+        limit: i8,
+        recent_records_count: i8,
+    ) -> Result<Vec<MarketData>> {
+        let rows = self
             .client
             .lock()
             .await
             .query(
-                "SELECT * FROM MarketData WHERE analyzed = false AND close_time < NOW() ORDER BY open_time DESC LIMIT $1",
-                &[&(limit as i64)],
+                "WITH RecentData AS (
+                SELECT * FROM MarketData
+                ORDER BY close_time DESC
+                LIMIT $2
+                )
+                SELECT DISTINCT ON (m.id) m.*
+                FROM (
+                    SELECT * FROM MarketData
+                    WHERE analyzed = false AND close_time < NOW()
+                    UNION ALL
+                    SELECT * FROM RecentData
+                ) m
+                ORDER BY m.id, m.close_time DESC
+                LIMIT $1",
+                &[&(limit as i64), &(recent_records_count as i64)],
             )
             .await;
 
@@ -135,16 +143,28 @@ impl MarketDataRepository {
                     bb_middle: r.get(17),
                     bb_lower: r.get(18),
                     atr_14: r.get(19),
-                    depth_imbalance: r.get(20),
-                    volatility_1h: r.get(21),
-                    volatility_24h: r.get(22),
-                    price_change_1h: r.get(23),
-                    price_change_24h: r.get(24),
-                    volume_change_1h: r.get(25),
-                    volume_change_24h: r.get(26),
-                    analyzed: r.get(27),
-                    usable_by_model: r.get(28),
-                    created_at: r.get(29),
+                    market_regime: r.get(20),
+                    adx: r.get(21),
+                    dmi_plus: r.get(22),
+                    dmi_minus: r.get(23),
+                    trend_strength: r.get(24),
+                    trend_direction: r.get(25),
+                    support_levels: r.get(26),
+                    resistance_levels: r.get(27),
+                    nearest_support: r.get(28),
+                    nearest_resistance: r.get(29),
+                    detected_patterns: r.get(30),
+                    pattern_strength: r.get(31),
+                    depth_imbalance: r.get(32),
+                    volatility_1h: r.get(33),
+                    volatility_24h: r.get(34),
+                    price_change_1h: r.get(35),
+                    price_change_24h: r.get(36),
+                    volume_change_1h: r.get(37),
+                    volume_change_24h: r.get(38),
+                    analyzed: r.get(39),
+                    usable_by_model: r.get(40),
+                    created_at: r.get(41),
                 })
                 .collect()),
             Err(error) => {
@@ -208,16 +228,28 @@ impl MarketDataRepository {
                     bb_middle: r.get(17),
                     bb_lower: r.get(18),
                     atr_14: r.get(19),
-                    depth_imbalance: r.get(20),
-                    volatility_1h: r.get(21),
-                    volatility_24h: r.get(22),
-                    price_change_1h: r.get(23),
-                    price_change_24h: r.get(24),
-                    volume_change_1h: r.get(25),
-                    volume_change_24h: r.get(26),
-                    analyzed: r.get(27),
-                    usable_by_model: r.get(28),
-                    created_at: r.get(29),
+                    market_regime: r.get(20),
+                    adx: r.get(21),
+                    dmi_plus: r.get(22),
+                    dmi_minus: r.get(23),
+                    trend_strength: r.get(24),
+                    trend_direction: r.get(25),
+                    support_levels: r.get(26),
+                    resistance_levels: r.get(27),
+                    nearest_support: r.get(28),
+                    nearest_resistance: r.get(29),
+                    detected_patterns: r.get(30),
+                    pattern_strength: r.get(31),
+                    depth_imbalance: r.get(32),
+                    volatility_1h: r.get(33),
+                    volatility_24h: r.get(34),
+                    price_change_1h: r.get(35),
+                    price_change_24h: r.get(36),
+                    volume_change_1h: r.get(37),
+                    volume_change_24h: r.get(38),
+                    analyzed: r.get(39),
+                    usable_by_model: r.get(40),
+                    created_at: r.get(41),
                 })
                 .collect()),
             Err(error) => {
@@ -232,24 +264,36 @@ impl MarketDataRepository {
         let rows = client
             .execute(
                 "UPDATE MarketData SET
-                   rsi_14 = $2,
-                   macd_line = $3,
-                   macd_signal = $4,
-                   macd_histogram = $5,
-                   bb_upper = $6,
-                   bb_middle = $7,
-                   bb_lower = $8,
-                   atr_14 = $9,
-                   depth_imbalance = $10,
-                   volatility_1h = $11,
-                   volatility_24h = $12,
-                   price_change_1h = $13,
-                   price_change_24h = $14,
-                   volume_change_1h = $15,
-                   volume_change_24h = $16,
-                   analyzed = $17,
-                   usable_by_model = $18
-                WHERE id = $1",
+               rsi_14 = $2,
+               macd_line = $3,
+               macd_signal = $4,
+               macd_histogram = $5,
+               bb_upper = $6,
+               bb_middle = $7,
+               bb_lower = $8,
+               atr_14 = $9,
+               market_regime = $10,
+               adx = $11,
+               dmi_plus = $12,
+               dmi_minus = $13,
+               trend_strength = $14,
+               trend_direction = $15,
+               support_levels = $16,
+               resistance_levels = $17,
+               nearest_support = $18,
+               nearest_resistance = $19,
+               detected_patterns = $20,
+               pattern_strength = $21,
+               depth_imbalance = $22,
+               volatility_1h = $23,
+               volatility_24h = $24,
+               price_change_1h = $25,
+               price_change_24h = $26,
+               volume_change_1h = $27,
+               volume_change_24h = $28,
+               analyzed = $29,
+               usable_by_model = $30
+            WHERE id = $1",
                 &[
                     &update.id,
                     &update.rsi_14,
@@ -260,6 +304,18 @@ impl MarketDataRepository {
                     &update.bb_middle,
                     &update.bb_lower,
                     &update.atr_14,
+                    &update.market_regime,
+                    &update.adx,
+                    &update.dmi_plus,
+                    &update.dmi_minus,
+                    &update.trend_strength,
+                    &update.trend_direction,
+                    &update.support_levels,
+                    &update.resistance_levels,
+                    &update.nearest_support,
+                    &update.nearest_resistance,
+                    &update.detected_patterns,
+                    &update.pattern_strength,
                     &update.depth_imbalance,
                     &update.volatility_1h,
                     &update.volatility_24h,
@@ -272,10 +328,11 @@ impl MarketDataRepository {
                 ],
             )
             .await;
+
         match rows {
             Ok(_rows) => Ok(()),
             Err(error) => {
-                println!("Error: {:?}", error);
+                error!("Error updating indicators: {:?}", error);
                 Err(MarketDataRepositoryError::Database(error))
             }
         }
@@ -319,16 +376,28 @@ impl MarketDataRepository {
             bb_middle: r.get(17),
             bb_lower: r.get(18),
             atr_14: r.get(19),
-            depth_imbalance: r.get(20),
-            volatility_1h: r.get(21),
-            volatility_24h: r.get(22),
-            price_change_1h: r.get(23),
-            price_change_24h: r.get(24),
-            volume_change_1h: r.get(25),
-            volume_change_24h: r.get(26),
-            analyzed: r.get(27),
-            usable_by_model: r.get(28),
-            created_at: r.get(29),
+            market_regime: r.get(20),
+            adx: r.get(21),
+            dmi_plus: r.get(22),
+            dmi_minus: r.get(23),
+            trend_strength: r.get(24),
+            trend_direction: r.get(25),
+            support_levels: r.get(26),
+            resistance_levels: r.get(27),
+            nearest_support: r.get(28),
+            nearest_resistance: r.get(29),
+            detected_patterns: r.get(30),
+            pattern_strength: r.get(31),
+            depth_imbalance: r.get(32),
+            volatility_1h: r.get(33),
+            volatility_24h: r.get(34),
+            price_change_1h: r.get(35),
+            price_change_24h: r.get(36),
+            volume_change_1h: r.get(37),
+            volume_change_24h: r.get(38),
+            analyzed: r.get(39),
+            usable_by_model: r.get(40),
+            created_at: r.get(41),
         }))
     }
 }

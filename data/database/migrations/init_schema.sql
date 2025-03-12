@@ -2,8 +2,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 SET TIME ZONE 'UTC';
 
 CREATE TYPE ContractType AS ENUM ('perpetual', 'current_quarter', 'next_quarter');
-CREATE TYPE MarketRegime AS ENUM ('trending_up', 'trending_down', 'ranging', 'high_volatility', 'low_volatility');
-CREATE TYPE ChartPattern AS ENUM (
+CREATE TYPE MarketRegime AS ENUM ('none', 'trending_up', 'trending_down', 'ranging', 'high_volatility', 'low_volatility');
+CREATE TYPE PricePattern AS ENUM (
+    'none',
     'double_top',
     'double_bottom',
     'head_and_shoulders',

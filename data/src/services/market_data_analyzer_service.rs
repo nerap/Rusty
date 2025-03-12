@@ -7,8 +7,9 @@ use rust_decimal::{
 };
 
 use crate::{
-    utils::helper::Helper, models::market_data::MarketDataIndicatorUpdate,
+    models::market_data::{MarketDataIndicatorUpdate, PricePattern},
     repositories::market_data_repository::MarketDataRepository,
+    utils::helper::Helper,
 };
 
 use super::database_service::DatabaseService;
@@ -32,10 +33,17 @@ impl MarketDataAnalyzer {
 
     pub async fn analyze_market_data(&self) -> Result<i32> {
         let mut analyzed_count = 0;
+
+        // Constants for market regime and pattern detection
+        const VOLATILITY_THRESHOLD: f64 = 0.02; // 2% daily volatility threshold
+        const TREND_STRENGTH_THRESHOLD: f64 = 25.0; // ADX threshold
+        const SR_WINDOW_SIZE: usize = 20; // Window for S/R detection
+        const SR_THRESHOLD: f64 = 0.02; // 2% threshold for S/R clustering
+
         loop {
             let unanalyzed_data = self
                 .market_data_repository
-                .find_unanalyzed_market_data(DEFAULT_FECTH_LIMIT)
+                .find_market_data_for_analysis(DEFAULT_FECTH_LIMIT, 100)
                 .await?;
             if unanalyzed_data.is_empty() {
                 break;
@@ -67,6 +75,18 @@ impl MarketDataAnalyzer {
                             bb_middle: None,
                             bb_lower: None,
                             atr_14: None,
+                            market_regime: None,
+                            adx: None,
+                            dmi_plus: None,
+                            dmi_minus: None,
+                            trend_strength: None,
+                            trend_direction: None,
+                            support_levels: None,
+                            resistance_levels: None,
+                            nearest_support: None,
+                            nearest_resistance: None,
+                            detected_patterns: None,
+                            pattern_strength: None,
                             depth_imbalance: None,
                             volatility_1h: None,
                             volatility_24h: None,
@@ -81,6 +101,7 @@ impl MarketDataAnalyzer {
                     continue;
                 }
 
+                // Calculate existing indicators
                 let closes: Vec<f64> = historical_data
                     .iter()
                     .map(|d| d.close.to_f64().unwrap())
@@ -98,6 +119,80 @@ impl MarketDataAnalyzer {
                 let volume_change_1h = Helper::calculate_volume_change(&historical_data, 1);
                 let volume_change_24h = Helper::calculate_volume_change(&historical_data, 24);
 
+                // Calculate new technical indicators
+                let adx = Helper::calculate_adx(&historical_data, 14);
+                let price_direction = Helper::calculate_price_direction(&historical_data, 20);
+
+                // Detect market regime
+                let market_regime = Helper::identify_market_regime(
+                    &historical_data,
+                    VOLATILITY_THRESHOLD,
+                    TREND_STRENGTH_THRESHOLD,
+                );
+
+                // Find support and resistance levels
+                let (support_levels, resistance_levels) = Helper::calculate_support_resistance(
+                    &historical_data,
+                    SR_WINDOW_SIZE,
+                    SR_THRESHOLD,
+                );
+
+                // Convert levels to Decimal vectors
+                let support_decimals = support_levels
+                    .iter()
+                    .map(|&x| Decimal::from_f64(x).unwrap())
+                    .collect::<Vec<Decimal>>();
+
+                let resistance_decimals = resistance_levels
+                    .iter()
+                    .map(|&x| Decimal::from_f64(x).unwrap())
+                    .collect::<Vec<Decimal>>();
+
+                // Find nearest support and resistance
+                let current_price = historical_data[0].close.to_f64().unwrap();
+                let nearest_support = support_levels
+                    .iter()
+                    .filter(|&&x| x < current_price)
+                    .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|&x| Decimal::from_f64(x).unwrap());
+
+                let nearest_resistance = resistance_levels
+                    .iter()
+                    .filter(|&&x| x > current_price)
+                    .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|&x| Decimal::from_f64(x).unwrap());
+
+                let (dmi_plus, dmi_minus) = Helper::calculate_dmi(&historical_data, 14);
+
+                const VOLUME_THRESHOLD: f64 = 1.5; // 150% of average volume
+                let mut detected_patterns = Vec::new();
+                let mut max_pattern_strength: f32 = 0.0;
+
+                // Check each pattern type
+                let patterns_to_check = [
+                    PricePattern::DoubleTop,
+                    PricePattern::DoubleBottom,
+                    PricePattern::HeadAndShoulders,
+                    PricePattern::InverseHeadAndShoulders,
+                    PricePattern::BullishEngulfing,
+                    PricePattern::BearishEngulfing,
+                    PricePattern::Doji,
+                    PricePattern::MorningStar,
+                    PricePattern::EveningStar,
+                ];
+
+                for pattern in patterns_to_check.iter() {
+                    if let Some(strength) = Helper::calculate_pattern_strength(
+                        &historical_data,
+                        pattern,
+                        VOLUME_THRESHOLD,
+                    ) {
+                        if strength > 0.3 {
+                            detected_patterns.push(pattern.clone());
+                            max_pattern_strength = max_pattern_strength.max(strength as f32);
+                        }
+                    }
+                }
 
                 self.market_data_repository
                     .update_indicators(MarketDataIndicatorUpdate {
@@ -110,6 +205,22 @@ impl MarketDataAnalyzer {
                         bb_middle: Some(Decimal::from_f64(middle).unwrap_or_default()),
                         bb_lower: Some(Decimal::from_f64(lower).unwrap_or_default()),
                         atr_14: Some(Decimal::from_f64(atr).unwrap_or_default()),
+                        market_regime,
+                        adx: Some(Decimal::from_f64(adx).unwrap_or_default()),
+                        dmi_plus: Some(Decimal::from_f64(dmi_plus).unwrap_or_default()),
+                        dmi_minus: Some(Decimal::from_f64(dmi_minus).unwrap_or_default()),
+                        trend_strength: Some(Decimal::from_f64(adx).unwrap_or_default()),
+                        trend_direction: Some(price_direction as i32),
+                        support_levels: Some(support_decimals),
+                        resistance_levels: Some(resistance_decimals),
+                        nearest_support,
+                        nearest_resistance,
+                        detected_patterns: Some(detected_patterns.clone()),
+                        pattern_strength: if !detected_patterns.is_empty() {
+                            Some(Decimal::from_f64(max_pattern_strength.into()).unwrap_or_default())
+                        } else {
+                            None
+                        },
                         depth_imbalance: Some(
                             Decimal::from_f64(depth_imbalance).unwrap_or_default(),
                         ),

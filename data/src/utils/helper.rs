@@ -70,7 +70,6 @@ impl Helper {
         let slow_period = 26;
         let signal_period = 9;
 
-        // Calculate EMAs for entire series
         let mut fast_emas = Vec::with_capacity(closes.len());
         let mut slow_emas = Vec::with_capacity(closes.len());
         let mut macd_lines = Vec::with_capacity(closes.len());
@@ -147,6 +146,78 @@ impl Helper {
         ((data[0].close - old_price) / old_price) * Decimal::ONE_HUNDRED
     }
 
+    pub fn calculate_price_range(data: &[MarketData]) -> f64 {
+        if data.is_empty() {
+            return 0.0;
+        }
+
+        let high = data
+            .iter()
+            .map(|d| d.high.to_f64().unwrap())
+            .fold(f64::MIN, f64::max);
+
+        let low = data
+            .iter()
+            .map(|d| d.low.to_f64().unwrap())
+            .fold(f64::MAX, f64::min);
+
+        let avg_price =
+            data.iter().map(|d| d.close.to_f64().unwrap()).sum::<f64>() / data.len() as f64;
+
+        let basic_range = (high - low) / avg_price;
+
+        let volatility = Self::calculate_price_volatility(data);
+        let volatility_factor = if volatility > 0.0 {
+            1.0 + (volatility / 0.1)
+        } else {
+            1.0
+        };
+
+        let time_factor = Self::calculate_time_factor(data);
+
+        let adjusted_range = basic_range * volatility_factor * time_factor;
+
+        adjusted_range.min(1.0).max(0.0)
+    }
+
+    fn calculate_price_volatility(data: &[MarketData]) -> f64 {
+        if data.len() < 2 {
+            return 0.0;
+        }
+
+        let returns: Vec<f64> = data
+            .windows(2)
+            .map(|window| {
+                let current = window[0].close.to_f64().unwrap();
+                let previous = window[1].close.to_f64().unwrap();
+                (current - previous) / previous
+            })
+            .collect();
+
+        let mean_return = returns.iter().sum::<f64>() / returns.len() as f64;
+        let variance = returns
+            .iter()
+            .map(|r| (r - mean_return).powi(2))
+            .sum::<f64>()
+            / returns.len() as f64;
+
+        variance.sqrt()
+    }
+
+    fn calculate_time_factor(data: &[MarketData]) -> f64 {
+        let pattern_duration = data.len();
+
+        let ideal_duration = 20;
+
+        if pattern_duration < ideal_duration {
+            0.5 + (0.5 * pattern_duration as f64 / ideal_duration as f64)
+        } else if pattern_duration > ideal_duration * 2 {
+            0.75
+        } else {
+            1.0
+        }
+    }
+
     pub fn calculate_volume_change(data: &[MarketData], hours: i64) -> Decimal {
         if data.len() < 2 || hours <= 0 {
             return Decimal::ZERO;
@@ -174,7 +245,6 @@ impl Helper {
 
         vol_ma * price_std
     }
-    // Helper functions
     pub fn exponential_ma(values: &[f64], period: usize) -> f64 {
         let alpha = 2.0 / (period + 1) as f64;
         let mut ema = values[0];
@@ -233,22 +303,6 @@ impl Helper {
         }
     }
 
-    // TREND STRENGTH INDICATORS
-    pub fn calculate_trend_indicators(data: &[MarketData], period: usize) -> (f64, f64, f64, f64) {
-        let (adx, dmi_plus, dmi_minus) = Self::calculate_adx_full(data, period);
-        let trend_strength = if adx > 0.0 {
-            if dmi_plus > dmi_minus {
-                adx * (dmi_plus / dmi_minus)
-            } else {
-                -adx * (dmi_minus / dmi_plus)
-            }
-        } else {
-            0.0
-        };
-
-        (adx, dmi_plus, dmi_minus, trend_strength)
-    }
-
     pub fn calculate_adx(data: &[MarketData], period: usize) -> f64 {
         if data.len() < period * 2 {
             return 0.0;
@@ -304,50 +358,7 @@ impl Helper {
             adx_values.push(dx);
         }
 
-        let adx = Self::exponential_ma(&adx_values, period);
-        adx
-    }
-
-    pub fn calculate_adx_full(data: &[MarketData], period: usize) -> (f64, f64, f64) {
-        let mut tr_values = Vec::with_capacity(data.len());
-        let mut plus_dm = Vec::with_capacity(data.len());
-        let mut minus_dm = Vec::with_capacity(data.len());
-
-        for i in 1..data.len() {
-            let high = data[i].high.to_f64().unwrap();
-            let low = data[i].low.to_f64().unwrap();
-            let prev_high = data[i - 1].high.to_f64().unwrap();
-            let prev_low = data[i - 1].low.to_f64().unwrap();
-            let prev_close = data[i - 1].close.to_f64().unwrap();
-
-            let tr = (high - low)
-                .max((high - prev_close).abs())
-                .max((low - prev_close).abs());
-
-            let up_move = high - prev_high;
-            let down_move = prev_low - low;
-
-            tr_values.push(tr);
-            plus_dm.push(if up_move > down_move && up_move > 0.0 {
-                up_move
-            } else {
-                0.0
-            });
-            minus_dm.push(if down_move > up_move && down_move > 0.0 {
-                down_move
-            } else {
-                0.0
-            });
-        }
-
-        let tr_period = Self::exponential_ma(&tr_values, period);
-        let plus_di = (Self::exponential_ma(&plus_dm, period) / tr_period) * 100.0;
-        let minus_di = (Self::exponential_ma(&minus_dm, period) / tr_period) * 100.0;
-
-        let dx = ((plus_di - minus_di).abs() / (plus_di + minus_di)) * 100.0;
-        let adx = Self::exponential_ma(&[dx], period);
-
-        (adx, plus_di, minus_di)
+        Self::exponential_ma(&adx_values, period)
     }
 
     pub fn calculate_support_resistance(
@@ -464,94 +475,88 @@ impl Helper {
         (clustered_supports, clustered_resistances)
     }
 
-    pub fn detect_candlestick_patterns(data: &[MarketData]) -> Vec<PricePattern> {
-        let mut patterns = Vec::new();
-
-        if data.len() < 3 {
-            return patterns;
+    pub fn is_bullish_engulfing(data: &[MarketData]) -> bool {
+        if data.len() < 2 {
+            return false;
         }
 
-        if Self::is_bullish_engulfing(&data[0..2]) {
-            patterns.push(PricePattern::BullishEngulfing);
-        }
-        if Self::is_bearish_engulfing(&data[0..2]) {
-            patterns.push(PricePattern::BearishEngulfing);
-        }
+        let current = &data[0];
+        let previous = &data[1];
 
-        if Self::is_doji(&data[0]) {
-            patterns.push(PricePattern::Doji);
-        }
+        let prev_bearish = previous.close < previous.open;
+        let curr_bullish = current.close > current.open;
+        let engulfs = current.open < previous.close && current.close > previous.open;
 
-        if Self::is_morning_star(&data[0..3]) {
-            patterns.push(PricePattern::MorningStar);
-        }
-        if Self::is_evening_star(&data[0..3]) {
-            patterns.push(PricePattern::EveningStar);
-        }
-
-        if data.len() >= 20 {
-            if Self::is_double_top(&data[0..20]) {
-                patterns.push(PricePattern::DoubleTop);
-            }
-            if Self::is_double_bottom(&data[0..20]) {
-                patterns.push(PricePattern::DoubleBottom);
-            }
-            if Self::is_head_and_shoulders(&data[0..20]) {
-                patterns.push(PricePattern::HeadAndShoulders);
-            }
-            if Self::is_inverse_head_and_shoulders(&data[0..20]) {
-                patterns.push(PricePattern::InverseHeadAndShoulders);
-            }
-        }
-
-        patterns
+        prev_bearish && curr_bullish && engulfs
     }
 
-    pub fn is_bullish_engulfing(candles: &[MarketData]) -> bool {
-        let prev = &candles[1];
-        let curr = &candles[0];
+    pub fn is_bearish_engulfing(data: &[MarketData]) -> bool {
+        if data.len() < 2 {
+            return false;
+        }
 
-        prev.close < prev.open && // Previous red candle
-        curr.close > curr.open && // Current green candle
-        curr.open < prev.close && // Current opens below previous close
-        curr.close > prev.open // Current closes above previous open
+        let current = &data[0];
+        let previous = &data[1];
+
+        let prev_bullish = previous.close > previous.open;
+        let curr_bearish = current.close < current.open;
+        let engulfs = current.open > previous.close && current.close < previous.open;
+
+        prev_bullish && curr_bearish && engulfs
     }
+    pub fn is_doji(data: &[MarketData]) -> bool {
+        if data.is_empty() {
+            return false;
+        }
 
-    pub fn is_bearish_engulfing(candles: &[MarketData]) -> bool {
-        let prev = &candles[1];
-        let curr = &candles[0];
-
-        prev.close > prev.open && // Previous green candle
-        curr.close < curr.open && // Current red candle
-        curr.open > prev.close && // Current opens above previous close
-        curr.close < prev.open // Current closes below previous open
-    }
-
-    pub fn is_doji(candle: &MarketData) -> bool {
+        let candle = &data[0];
         let body_size = (candle.close - candle.open).abs();
         let total_size = candle.high - candle.low;
 
+        // Body is very small compared to total size
         body_size / total_size < Decimal::from_f32(0.1).unwrap()
     }
 
-    pub fn is_morning_star(candles: &[MarketData]) -> bool {
-        let first = &candles[2];
-        let second = &candles[1];
-        let third = &candles[0];
+    pub fn is_morning_star(data: &[MarketData]) -> bool {
+        if data.len() < 3 {
+            return false;
+        }
 
-        first.close < first.open && // First day is bearish
-        Self::is_doji(second) &&    // Second day is doji
-        third.close > third.open // Third day is bullish
+        let first = &data[2]; // First day
+        let second = &data[1]; // Second day (doji)
+        let third = &data[0]; // Third day
+
+        let first_bearish = first.close < first.open;
+        let third_bullish = third.close > third.open;
+        let is_second_doji = Self::is_doji(&[second.clone()]);
+
+        // Gap down between first and second day
+        let gap_down = second.high < first.close;
+        // Gap up between second and third day
+        let gap_up = third.open > second.low;
+
+        first_bearish && is_second_doji && third_bullish && gap_down && gap_up
     }
 
-    pub fn is_evening_star(candles: &[MarketData]) -> bool {
-        let first = &candles[2];
-        let second = &candles[1];
-        let third = &candles[0];
+    pub fn is_evening_star(data: &[MarketData]) -> bool {
+        if data.len() < 3 {
+            return false;
+        }
 
-        first.close > first.open && // First day is bullish
-        Self::is_doji(second) &&    // Second day is doji
-        third.close < third.open // Third day is bearish
+        let first = &data[2]; // First day
+        let second = &data[1]; // Second day (doji)
+        let third = &data[0]; // Third day
+
+        let first_bullish = first.close > first.open;
+        let third_bearish = third.close < third.open;
+        let is_second_doji = Self::is_doji(&[second.clone()]);
+
+        // Gap up between first and second day
+        let gap_up = second.low > first.close;
+        // Gap down between second and third day
+        let gap_down = third.open < second.high;
+
+        first_bullish && is_second_doji && third_bearish && gap_up && gap_down
     }
 
     pub fn is_double_top(data: &[MarketData]) -> bool {
@@ -810,6 +815,398 @@ impl Helper {
         }
 
         false
+    }
+    pub fn calculate_dmi(data: &[MarketData], period: usize) -> (f64, f64) {
+        if data.len() < period * 2 {
+            return (0.0, 0.0);
+        }
+
+        let mut tr_values = Vec::with_capacity(data.len());
+        let mut plus_dm = Vec::with_capacity(data.len());
+        let mut minus_dm = Vec::with_capacity(data.len());
+
+        // Calculate TR and DM values
+        for i in 1..data.len() {
+            let high = data[i].high.to_f64().unwrap();
+            let low = data[i].low.to_f64().unwrap();
+            let prev_high = data[i - 1].high.to_f64().unwrap();
+            let prev_low = data[i - 1].low.to_f64().unwrap();
+            let prev_close = data[i - 1].close.to_f64().unwrap();
+
+            // True Range
+            let tr = (high - low)
+                .max((high - prev_close).abs())
+                .max((low - prev_close).abs());
+            tr_values.push(tr);
+
+            // Directional Movement
+            let up_move = high - prev_high;
+            let down_move = prev_low - low;
+
+            if up_move > down_move && up_move > 0.0 {
+                plus_dm.push(up_move);
+                minus_dm.push(0.0);
+            } else if down_move > up_move && down_move > 0.0 {
+                plus_dm.push(0.0);
+                minus_dm.push(down_move);
+            } else {
+                plus_dm.push(0.0);
+                minus_dm.push(0.0);
+            }
+        }
+
+        // Calculate smoothed values
+        let smoothed_tr = Self::exponential_ma(&tr_values, period);
+        let smoothed_plus_dm = Self::exponential_ma(&plus_dm, period);
+        let smoothed_minus_dm = Self::exponential_ma(&minus_dm, period);
+
+        // Calculate DMI values
+        let plus_di = if smoothed_tr != 0.0 {
+            100.0 * smoothed_plus_dm / smoothed_tr
+        } else {
+            0.0
+        };
+        let minus_di = if smoothed_tr != 0.0 {
+            100.0 * smoothed_minus_dm / smoothed_tr
+        } else {
+            0.0
+        };
+
+        (plus_di, minus_di)
+    }
+
+    pub fn calculate_std_dev(values: &[f64]) -> f64 {
+        let n = values.len() as f64;
+        let mean = values.iter().sum::<f64>() / n;
+        let variance = values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
+        variance.sqrt()
+    }
+
+    pub fn calculate_pattern_strength(
+        data: &[MarketData],
+        pattern_type: &PricePattern,
+        volume_threshold: f64,
+    ) -> Option<f64> {
+        let base_strength = match pattern_type {
+            PricePattern::DoubleTop => {
+                if Self::is_double_top(data) {
+                    Some(Self::evaluate_pattern_strength(data, true))
+                } else {
+                    None
+                }
+            }
+            PricePattern::DoubleBottom => {
+                if Self::is_double_bottom(data) {
+                    Some(Self::evaluate_pattern_strength(data, false))
+                } else {
+                    None
+                }
+            }
+            PricePattern::HeadAndShoulders => {
+                if Self::is_head_and_shoulders(data) {
+                    Some(Self::evaluate_pattern_strength(data, true))
+                } else {
+                    None
+                }
+            }
+            PricePattern::InverseHeadAndShoulders => {
+                if Self::is_inverse_head_and_shoulders(data) {
+                    Some(Self::evaluate_pattern_strength(data, false))
+                } else {
+                    None
+                }
+            }
+            PricePattern::BullishEngulfing => {
+                if Self::is_bullish_engulfing(data) {
+                    Some(Self::evaluate_pattern_strength(data, true))
+                } else {
+                    None
+                }
+            }
+            PricePattern::BearishEngulfing => {
+                if Self::is_bearish_engulfing(data) {
+                    Some(Self::evaluate_pattern_strength(data, true))
+                } else {
+                    None
+                }
+            }
+            PricePattern::Doji => {
+                if Self::is_doji(data) {
+                    Some(Self::evaluate_pattern_strength(data, false))
+                } else {
+                    None
+                }
+            }
+            PricePattern::MorningStar => {
+                if Self::is_morning_star(data) {
+                    Some(Self::evaluate_pattern_strength(data, true))
+                } else {
+                    None
+                }
+            }
+            PricePattern::EveningStar => {
+                if Self::is_evening_star(data) {
+                    Some(Self::evaluate_pattern_strength(data, true))
+                } else {
+                    None
+                }
+            }
+            PricePattern::None => None
+        };
+
+        base_strength.map(|strength| {
+            let volume_confirmation = Self::check_volume_confirmation(data, volume_threshold);
+            let trend_confirmation = Self::check_trend_confirmation(data);
+
+            // Combine all factors for final strength
+            strength * volume_confirmation * trend_confirmation
+        })
+    }
+
+    pub fn check_volume_confirmation(data: &[MarketData], threshold: f64) -> f64 {
+        let avg_volume =
+            data.iter().map(|d| d.volume.to_f64().unwrap()).sum::<f64>() / data.len() as f64;
+
+        let recent_volume = data[0].volume.to_f64().unwrap();
+        let volume_ratio = recent_volume / avg_volume;
+
+        if volume_ratio >= threshold {
+            1.0
+        } else {
+            volume_ratio / threshold
+        }
+    }
+
+    pub fn check_trend_confirmation(data: &[MarketData]) -> f64 {
+        let adx = Self::calculate_adx(data, 14);
+        let normalized_adx = adx / 100.0; // ADX ranges from 0 to 100
+
+        // Strong trend > 25 ADX gets full score
+        if normalized_adx > 0.25 {
+            1.0
+        } else {
+            normalized_adx / 0.25
+        }
+    }
+
+    pub fn normalize_range(value: f64, min: f64, max: f64) -> f64 {
+        ((value - min) / (max - min)).max(0.0).min(1.0)
+    }
+
+    pub fn evaluate_pattern_strength(data: &[MarketData], is_reversal: bool) -> f64 {
+        let mut strength = 1.0;
+
+        // 1. Price Movement Magnitude
+        let price_range = Self::calculate_price_range(data);
+        let range_score = Self::normalize_range(price_range, 0.01, 0.1);
+        strength *= range_score * 0.25; // 25% weight
+
+        // 2. Volume Analysis
+        let volume_score = Self::evaluate_volume_pattern(data);
+        strength *= volume_score * 0.20; // 20% weight
+
+        // 3. Pattern Formation Quality
+        let quality_score = Self::evaluate_formation_quality(data);
+        strength *= quality_score * 0.25; // 25% weight
+
+        // 4. Trend Context
+        if is_reversal {
+            let trend_score = Self::evaluate_trend_context(data);
+            strength *= trend_score * 0.15; // 15% weight
+        }
+
+        // 5. Candlestick Size Consistency
+        let consistency_score = Self::evaluate_candle_consistency(data);
+        strength *= consistency_score * 0.15; // 15% weight
+
+        // Bound the strength between 0 and 1
+        strength.max(0.0).min(1.0)
+    }
+
+    pub fn evaluate_volume_pattern(data: &[MarketData]) -> f64 {
+        let avg_volume =
+            data.iter().map(|d| d.volume.to_f64().unwrap()).sum::<f64>() / data.len() as f64;
+
+        let recent_volumes: Vec<f64> = data
+            .iter()
+            .take(3) // Look at most recent 3 candles
+            .map(|d| d.volume.to_f64().unwrap())
+            .collect();
+
+        let recent_avg = recent_volumes.iter().sum::<f64>() / recent_volumes.len() as f64;
+        let volume_increase = recent_avg / avg_volume;
+
+        // Score based on volume increase
+        if volume_increase >= 2.0 {
+            1.0
+        }
+        // 200% or more of average volume
+        else if volume_increase >= 1.5 {
+            0.8
+        }
+        // 150% of average volume
+        else if volume_increase >= 1.2 {
+            0.6
+        }
+        // 120% of average volume
+        else if volume_increase >= 1.0 {
+            0.4
+        }
+        // Average volume
+        else {
+            0.2
+        } // Below average volume
+    }
+
+    pub fn evaluate_formation_quality(data: &[MarketData]) -> f64 {
+        let mut quality_score = 1.0;
+
+        // Check price levels alignment
+        let price_alignment = Self::check_price_levels_alignment(data);
+        quality_score *= price_alignment;
+
+        // Check time symmetry
+        let time_symmetry = Self::check_time_symmetry(data);
+        quality_score *= time_symmetry;
+
+        // Check for noise (false breakouts, spikes)
+        let noise_factor = Self::calculate_noise_factor(data);
+        quality_score *= noise_factor;
+
+        quality_score
+    }
+
+    pub fn check_price_levels_alignment(data: &[MarketData]) -> f64 {
+        let highs: Vec<f64> = data.iter().map(|d| d.high.to_f64().unwrap()).collect();
+
+        let lows: Vec<f64> = data.iter().map(|d| d.low.to_f64().unwrap()).collect();
+
+        // Calculate standard deviation of pivots
+        let high_std = Self::calculate_std_dev(&highs);
+        let low_std = Self::calculate_std_dev(&lows);
+
+        // Lower standard deviation means better alignment
+        let alignment_score =
+            1.0 - (high_std + low_std) / (highs.iter().sum::<f64>() / highs.len() as f64);
+
+        alignment_score.max(0.0).min(1.0)
+    }
+
+    pub fn check_time_symmetry(data: &[MarketData]) -> f64 {
+        if data.len() < 3 {
+            return 0.5;
+        }
+
+        // Find the middle point of the pattern
+        let mid_point = data.len() / 2;
+        let left_side = &data[mid_point..];
+        let right_side = &data[..mid_point];
+
+        // Compare the time distances of key points
+        let left_duration = left_side.len() as f64;
+        let right_duration = right_side.len() as f64;
+
+        (left_duration.min(right_duration) / left_duration.max(right_duration)).powf(0.5)
+    }
+
+    pub fn calculate_noise_factor(data: &[MarketData]) -> f64 {
+        let closes: Vec<f64> = data.iter().map(|d| d.close.to_f64().unwrap()).collect();
+
+        // Calculate price volatility
+        let volatility = Self::calculate_std_dev(&closes);
+        let avg_price = closes.iter().sum::<f64>() / closes.len() as f64;
+        let normalized_volatility = volatility / avg_price;
+
+        // Less noise = higher score
+        let noise_score = 1.0 - normalized_volatility;
+        noise_score.max(0.2).min(1.0) // Never go below 0.2
+    }
+
+    pub fn evaluate_trend_context(data: &[MarketData]) -> f64 {
+        let mut trend_score = 1.0;
+
+        // Calculate trend strength using ADX
+        let adx = Self::calculate_adx(data, 14);
+        let adx_score = adx / 100.0;
+        trend_score *= adx_score;
+
+        // Check trend duration
+        let trend_duration_score = Self::evaluate_trend_duration(data);
+        trend_score *= trend_duration_score;
+
+        // Check trend momentum
+        let momentum_score = Self::evaluate_trend_momentum(data);
+        trend_score *= momentum_score;
+
+        trend_score
+    }
+
+    pub fn evaluate_trend_duration(data: &[MarketData]) -> f64 {
+        let ideal_duration = 20; // Ideal number of candles for trend
+        let actual_duration = data.len();
+
+        let duration_ratio = actual_duration as f64 / ideal_duration as f64;
+        if duration_ratio >= 0.8 && duration_ratio <= 1.5 {
+            1.0
+        } else if duration_ratio > 1.5 {
+            0.8 // Longer trends are still good but slightly penalized
+        } else {
+            0.5 + (duration_ratio * 0.5) // Shorter trends are more heavily penalized
+        }
+    }
+
+    pub fn evaluate_trend_momentum(data: &[MarketData]) -> f64 {
+        if data.len() < 2 {
+            return 0.5;
+        }
+
+        let closes: Vec<f64> = data.iter().map(|d| d.close.to_f64().unwrap()).collect();
+
+        let roc = (closes[0] - closes[closes.len() - 1]) / closes[closes.len() - 1];
+        let abs_roc = roc.abs();
+
+        if abs_roc >= 0.05 {
+            1.0
+        }
+        // Strong momentum
+        else if abs_roc >= 0.03 {
+            0.8
+        }
+        // Good momentum
+        else if abs_roc >= 0.01 {
+            0.6
+        }
+        // Moderate momentum
+        else {
+            0.4
+        } // Weak momentum
+    }
+
+    pub fn evaluate_candle_consistency(data: &[MarketData]) -> f64 {
+        let body_sizes: Vec<f64> = data
+            .iter()
+            .map(|d| (d.close - d.open).abs().to_f64().unwrap())
+            .collect();
+
+        let shadow_sizes: Vec<f64> = data
+            .iter()
+            .map(|d| {
+                let upper = d.high - d.close.max(d.open);
+                let lower = d.close.min(d.open) - d.low;
+                (upper + lower).to_f64().unwrap()
+            })
+            .collect();
+
+        let body_consistency = 1.0
+            - (Self::calculate_std_dev(&body_sizes)
+                / (body_sizes.iter().sum::<f64>() / body_sizes.len() as f64));
+
+        let shadow_consistency = 1.0
+            - (Self::calculate_std_dev(&shadow_sizes)
+                / (shadow_sizes.iter().sum::<f64>() / shadow_sizes.len() as f64));
+
+        let consistency_score = (body_consistency + shadow_consistency) / 2.0;
+        consistency_score.clamp(0.0, 1.0)
     }
 }
 

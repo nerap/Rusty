@@ -1,32 +1,66 @@
 use chrono::{DateTime, Utc};
+use postgres_types::{FromSql, ToSql};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, FromSql, ToSql, Clone)]
+#[postgres(name = "marketregime")]
 pub enum MarketRegime {
+    #[postgres(name = "none")]
+    #[serde(rename = "none")]
+    None,
+    #[postgres(name = "trending_up")]
+    #[serde(rename = "TRENDING_UP")]
     TrendingUp,
+    #[postgres(name = "trending_down")]
+    #[serde(rename = "TRENDING_DOWN")]
     TrendingDown,
+    #[postgres(name = "ranging")]
+    #[serde(rename = "RANGING")]
     Ranging,
+    #[postgres(name = "high_volatility")]
+    #[serde(rename = "HIGH_VOLATILITY")]
     HighVolatility,
+    #[postgres(name = "low_volatility")]
+    #[serde(rename = "LOW_VOLATILITY")]
     LowVolatility,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, FromSql, ToSql, Clone)]
+#[postgres(name = "pricepattern")]
 pub enum PricePattern {
+    #[postgres(name = "double_top")]
+    #[serde(rename = "DOUBLE_TOP")]
     DoubleTop,
+    #[postgres(name = "double_bottom")]
+    #[serde(rename = "DOUBLE_BOTTOM")]
     DoubleBottom,
+    #[postgres(name = "head_and_shoulders")]
+    #[serde(rename = "HEAD_AND_SHOULDERS")]
     HeadAndShoulders,
+    #[postgres(name = "inverse_head_and_shoulders")]
+    #[serde(rename = "INVERSE_HEAD_AND_SHOULDERS")]
     InverseHeadAndShoulders,
+    #[postgres(name = "bullish_engulfing")]
+    #[serde(rename = "BULLISH_ENGULFING")]
     BullishEngulfing,
+    #[postgres(name = "bearish_engulfing")]
+    #[serde(rename = "BEARISH_ENGULFING")]
     BearishEngulfing,
+    #[postgres(name = "doji")]
+    #[serde(rename = "DOJI")]
     Doji,
+    #[postgres(name = "morning_star")]
+    #[serde(rename = "MORNING_STAR")]
     MorningStar,
+    #[postgres(name = "evening_star")]
+    #[serde(rename = "EVENING_STAR")]
     EveningStar,
 }
 
-#[derive(Debug, Serialize, Deserialize, Validate)]
+#[derive(Debug, Serialize, Deserialize, Validate, Clone)]
 pub struct MarketData {
     pub id: Uuid,
     pub timeframe_id: Uuid,
@@ -128,18 +162,6 @@ impl MarketData {
             volume,
             trades,
             rsi_14: None,
-            market_regime: None,
-            adx: None,
-            dmi_plus: None,
-            dmi_minus: None,
-            trend_strength: None,
-            trend_direction: None, // 1 for up, -1 for down, 0 for neutral
-            support_levels: None,
-            resistance_levels: None,
-            nearest_support: None,
-            nearest_resistance: None,
-            detected_patterns: None,
-            pattern_strength: None,
             macd_line: None,
             macd_signal: None,
             macd_histogram: None,
@@ -147,6 +169,18 @@ impl MarketData {
             bb_middle: None,
             bb_lower: None,
             atr_14: None,
+            market_regime: None,
+            adx: None,
+            dmi_plus: None,
+            dmi_minus: None,
+            trend_strength: None,
+            trend_direction: None,
+            support_levels: None,
+            resistance_levels: None,
+            nearest_support: None,
+            nearest_resistance: None,
+            detected_patterns: None,
+            pattern_strength: None,
             depth_imbalance: None,
             volatility_1h: None,
             volatility_24h: None,
